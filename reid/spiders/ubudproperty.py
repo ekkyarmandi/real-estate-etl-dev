@@ -41,18 +41,18 @@ class UbudpropertySpider(scrapy.Spider):
                 self.visited.append(url)
                 yield scrapy.Request(url, callback=self.parse_detail)
         # do pagination
-        # last_page = response.css("ul.pagination li:contains(Last) a::attr(href)").get()
-        # if last_page:
-        #     max_page = last_page.split("=")[-1]
-        #     max_page = int(max_page)
-        #     for i in range(2, max_page + 1):
-        #         # example: https://ubudproperty.com/listing-villaforsale=2
-        #         next_page = response.url + "=" + str(i)
-        #         footprint = response.url.split("/")[-1].split("=")[0].split("-")[-1]
-        #         footprint += "=" + str(i)
-        #         if footprint not in self.visited:
-        #             self.visited.append(footprint)
-        #             yield scrapy.Request(next_page, callback=self.parse)
+        last_page = response.css("ul.pagination li:contains(Last) a::attr(href)").get()
+        if last_page:
+            max_page = last_page.split("=")[-1]
+            max_page = int(max_page)
+            for i in range(2, max_page + 1):
+                # example: https://ubudproperty.com/listing-villaforsale=2
+                next_page = response.url + "=" + str(i)
+                footprint = response.url.split("/")[-1].split("=")[0].split("-")[-1]
+                footprint += "=" + str(i)
+                if footprint not in self.visited:
+                    self.visited.append(footprint)
+                    yield scrapy.Request(next_page, callback=self.parse)
 
     def parse_detail(self, response):
         this_month = datetime.now().replace(
