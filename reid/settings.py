@@ -76,9 +76,10 @@ DEFAULT_REQUEST_HEADERS = {
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
-    "reid.pipelines.RawDataPipelines": 100,
-    "reid.pipelines.PropertyRecordPipelines": 200,
-    "reid.pipelines.PropertyDataPipelines": 300,
+    "reid.pipelines.property.RawDataPipeline": 100,
+    "reid.pipelines.property.PropertyPipeline": 200,
+    "reid.pipelines.property.ListingPipeline": 300,
+    # "reid.pipelines.local.CheckMissingFieldsPipeline": 300,
 }
 
 # Enable and configure the AutoThrottle extension (disabled by default)
@@ -102,12 +103,58 @@ ITEM_PIPELINES = {
 # HTTPCACHE_IGNORE_HTTP_CODES = []
 # HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
 
-# RETRY_HTTP_CODES = [502, 503, 504, 400, 403, 404, 408]  # exclude 500, 429
-
 # Set settings whose default value is deprecated to a future-proof value
 REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
+
+# REID Websites and their codes
+REID_CODE = {
+    "Bali Properties for Sale": "BOFS",
+    "Teal Estate": "TEST",
+    "Bali Property Direct": "BPOD",
+    "Bali Real Estate Consultants": "BREC",
+    "Bali Realty": "BREL",
+    "Bali Select": "BSEL",
+    "Bali Treasure Properties": "BTPR",
+    "Heritage Bali": "HRTB",
+    "Unreal Bali": "URLB",
+    "Exotiq Property": "EXCP",
+    "Kibarer": "KIBR",
+    "Paradise Property Group": "PPGB",
+    "Lazudi": "LAZD",
+    "Suasa Real Estate": "SURE",
+    "Svaha Property": "SVHP",
+    "Luxindo Property": "LUXP",
+    "Raja Villa Property": "RJVP",
+    "GD&ASSOCIATES": "GDAC",
+    "Bali Home Immo": "BHIM",
+    "Propertia": "PROP",
+    "Bali Exception": "BEXC",
+    "Villas of Bali": "VOFB",
+    "Dot Property": "DOTP",
+    "Bali Coconut Living": "BCLV",
+    "Ray White Indonesia": "RWID",
+    "Bali Moves": "BLMV",
+    "Ubud Property": "UBPR",
+}
+
+ZONING_COLORS = {
+    "yellow": "Residential",
+    "red": "Commercial",
+    "pink": "Tourism",
+    "green": "Agricultural",
+    "dark green": "Green",
+    "orange": "Sacred",
+    "grey": "Industrial",
+    "blue": "Special",
+}
+
+ZONING_CATEGORIES = {
+    "residential": "Residential",
+    "commercial": "Commercial",
+    "tourism": "Tourism",
+}
 
 # Logging configuration
 # LOG_LEVEL = "INFO"

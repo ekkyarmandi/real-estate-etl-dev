@@ -832,6 +832,22 @@ class IsOffPlan(TakeFirst):
         return any_sold
 
 
-# RULE: build_size > land_size
-# RECORD: source, url, row, spreadsheet file
-# LABEL: HAS LARGER BUILD SIZE
+def standardize_property_type(property_type: str) -> str:
+    # define the property type
+    if re.search(r"land", property_type, re.IGNORECASE):
+        property_type = "Land"
+    elif re.search(r"townhouse", property_type, re.IGNORECASE):
+        property_type = "Townhouse"
+    elif re.search(r"house|home", property_type, re.IGNORECASE):
+        property_type = "House"
+    elif re.search(r"apartment|apartement", property_type, re.IGNORECASE):
+        property_type = "Apartment"
+    elif re.search(r"commercial", property_type, re.IGNORECASE):
+        property_type = "Commercial"
+    elif re.search(r"^hotel", property_type, re.IGNORECASE):
+        property_type = "Hotel"
+    elif re.search(r"villa", property_type, re.IGNORECASE):
+        property_type = "Villa"
+    # remove "for Sale" keywords from property type
+    property_type = str(property_type).replace(" for Sale", "")
+    return property_type

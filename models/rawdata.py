@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, Text, TIMESTAMP
+from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime
 from models.base import Base
@@ -9,6 +10,8 @@ class RawData(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     url = Column(Text, nullable=False)
-    created_at = Column(TIMESTAMP, default=datetime.now(datetime.UTC))
+    created_at = Column(TIMESTAMP, default=datetime.now())
     html = Column(Text, nullable=True)
     json = Column(Text, nullable=True)
+
+    property = relationship("Property", back_populates="rawdata")

@@ -26,7 +26,7 @@ class UbudpropertySpider(scrapy.Spider):
     allowed_domains = ["ubudproperty.com"]
     start_urls = [
         "https://ubudproperty.com/listing-villaforsale",
-        # "https://ubudproperty.com/listing-landforsale",
+        "https://ubudproperty.com/listing-landforsale",
     ]
     visited = []
 
@@ -34,9 +34,12 @@ class UbudpropertySpider(scrapy.Spider):
         # collect urls
         codes = response.css("a:contains(Detail)::attr(href)").getall()
         urls = list(map(lambda x: urljoin(response.url, x), codes))
-        yield scrapy.Request(urls[0], callback=self.parse_detail)
-        # for url in urls:
-        #     yield scrapy.Request(url, callback=self.parse_detail)
+        urls = list(filter(lambda x: x not in self.visited, urls))
+        # yield scrapy.Request(urls[0], callback=self.parse_detail)
+        for url in urls:
+            if url not in self.visited:
+                self.visited.append(url)
+                yield scrapy.Request(url, callback=self.parse_detail)
         # do pagination
         # last_page = response.css("ul.pagination li:contains(Last) a::attr(href)").get()
         # if last_page:
@@ -52,17 +55,21 @@ class UbudpropertySpider(scrapy.Spider):
         #             yield scrapy.Request(next_page, callback=self.parse)
 
     def parse_detail(self, response):
-        now = datetime.now().strftime("%m/01/%y")
+        this_month = datetime.now().replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
         loader = ItemLoader(item=PropertyItem(), selector=response)
         # collect raw data
         loader.add_value("source", "Ubud Property")
-        loader.add_value("scraped_at", now)
+        loader.add_value("scraped_at", this_month)
         loader.add_value("url", response.url)
         loader.add_value("html", response.text)
         # pre processed data
         alt_title = (
             response.css("h2.title::Text").get().strip()
         )  # price also exists in here
+        idr = find_idr(alt_title)
+        usd = find_usd(alt_title)
         ## finding lisiting listed/publish date
         sources = response.css("img[src]::attr(src)").getall()
         publish_dates = list(map(extract_publish_date, sources))
@@ -100,11 +107,15 @@ class UbudpropertySpider(scrapy.Spider):
             template_css.format("BUILDING"),
             MapCompose(find_build_size),
         )
-        # loader.add_css('price', '')
-        # loader.add_css('currency', '')
+        if idr:
+            loader.add_value("price", idr)
+            loader.add_value("currency", "IDR")
+        elif usd:
+            loader.add_value("price", usd)
+            loader.add_value("currency", "USD")
         loader.add_css("image_url", "div.thumbDetail img::attr(src)")
         loader.add_value("availability_label", "Available")
-        loader.add_css("description", "div#ENG ::Text")
+        loader.add_css("description", "div#ENG ::Text,div.sideDetail table ::Text")
         # redefine value based on collected value
         item = loader.load_item()
         ## replace title with alt_title if not exist
@@ -130,13 +141,13 @@ class UbudpropertySpider(scrapy.Spider):
             item["description"] = desc.replace(title, "")
         ## find leasehold years in the table ##
         contract_type = item.get("contract_type")
-        leasehold_years = item.get("years")
+        leasehold_years = item.get("leasehold_years")
         alt_years = response.css(
             "table tr:contains(LEASING) td:last-child ::Text"
         ).get()
         if "Leasehold" in contract_type and not leasehold_years and alt_years:
-            item["years"] = find_leasehold_years(alt_years)
+            item["leasehold_years"] = find_leasehold_years(alt_years)
         ## make sure the leasehold_years is empty on freehold ##
         if "Freehold" in contract_type:
-            item["years"] = None
+            item["leasehold_years"] = None
         yield item

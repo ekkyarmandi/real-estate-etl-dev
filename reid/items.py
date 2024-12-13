@@ -6,22 +6,26 @@
 import scrapy
 from itemloaders.processors import TakeFirst, MapCompose
 
-from reid.func import AnySoldDelisted, JoinAndStrip, to_number
+from reid.func import (
+    AnySoldDelisted,
+    JoinAndStrip,
+    standardize_property_type,
+    to_number,
+)
 
 
 class PropertyItem(scrapy.Item):
-    id = scrapy.Field(output_processor=TakeFirst())
-    url = scrapy.Field(output_processor=TakeFirst())
+    # raw data
     source = scrapy.Field(output_processor=TakeFirst())
+    url = scrapy.Field(
+        input_processor=MapCompose(str.strip),
+        output_processor=TakeFirst(),
+    )
     html = scrapy.Field(output_processor=TakeFirst())
     json = scrapy.Field(output_processor=TakeFirst())
+    # property data
+    property_id = scrapy.Field(output_processor=TakeFirst())
     scraped_at = scrapy.Field(output_processor=TakeFirst())
-    property_id = scrapy.Field(
-        input_processor=MapCompose(str.strip), output_processor=TakeFirst()
-    )
-    is_off_plan = scrapy.Field(
-        input_processor=MapCompose(str.strip), output_processor=TakeFirst()
-    )
     listed_date = scrapy.Field(
         input_processor=MapCompose(str.strip), output_processor=TakeFirst()
     )
@@ -35,7 +39,8 @@ class PropertyItem(scrapy.Item):
         input_processor=MapCompose(str.strip), output_processor=TakeFirst()
     )
     property_type = scrapy.Field(
-        input_processor=MapCompose(str.strip), output_processor=TakeFirst()
+        input_processor=MapCompose(str.strip, standardize_property_type),
+        output_processor=TakeFirst(),
     )
     leasehold_years = scrapy.Field(
         input_processor=MapCompose(to_number), output_processor=TakeFirst()
@@ -56,7 +61,7 @@ class PropertyItem(scrapy.Item):
         input_processor=MapCompose(to_number), output_processor=TakeFirst()
     )
     currency = scrapy.Field(
-        input_processor=MapCompose(to_number), output_processor=TakeFirst()
+        input_processor=MapCompose(str.strip, str.upper), output_processor=TakeFirst()
     )
     image_url = scrapy.Field(
         input_processor=MapCompose(str.strip), output_processor=TakeFirst()
@@ -64,6 +69,10 @@ class PropertyItem(scrapy.Item):
     availability_label = scrapy.Field(
         input_processor=MapCompose(str.strip), output_processor=AnySoldDelisted()
     )
+    sold_at = scrapy.Field(output_processor=TakeFirst())
     description = scrapy.Field(
         input_processor=MapCompose(str.strip), output_processor=JoinAndStrip("\n")
+    )
+    is_off_plan = scrapy.Field(
+        input_processor=MapCompose(str.strip), output_processor=TakeFirst()
     )

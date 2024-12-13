@@ -1,1 +1,8 @@
+# dirs
+__pycache__/
 archive/
+.venv/
+alembic*
+
+# files
+.env
