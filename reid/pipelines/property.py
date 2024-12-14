@@ -71,6 +71,7 @@ class PropertyPipeline:
             db.commit()
             db.refresh(property)
             property.identify_issues()
+            item["land_zoning"] = property.land_zoning
         except Exception as e:
             db.rollback()
             # record error
@@ -104,6 +105,9 @@ class ListingPipeline:
         listing.reid_id_generator(db)
         try:
             db.add(listing)
+            db.commit()
+            # remove error related to the listing if exists
+            db.query(Error).filter(Error.url == item.get("url")).delete()
             db.commit()
         except Exception as e:
             db.rollback()
