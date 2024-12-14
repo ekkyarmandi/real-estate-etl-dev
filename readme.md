@@ -1,16 +1,40 @@
 # REID
 
-## Install
+## Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Run
+## Run all spiders
 
 ```bash
 sh crawl.sh
 ```
+
+## Migrate database models
+
+- Make sure the `sqlalchemy.url` variable is point to the database
+- Autogenerate the migration script
+
+```bash
+alembic revision --autogenerate -m "migration message"
+```
+
+- Apply the migration script
+
+```bash
+alembic upgrade head
+```
+
+- Downgrade the migration script
+
+```bash
+alembic downgrade <revision_id>
+```
+
+> Note: alembic versions is not pushed to the repository.
+> Reminder: Don't forget to create `BaseModel` in `base.py` and add the entire models in `__init__.py` file
 
 ## How it works
 

@@ -90,7 +90,7 @@ class Listing(Base):
             old_value = getattr(self, attr)
             new_value = new_data.get(attr)
             if attr == "availability":
-                if old_value != "Available":
+                if new_value != "Available":
                     self.is_available = False
                     self.sold_at = datetime.now().replace(
                         day=1,
@@ -101,6 +101,7 @@ class Listing(Base):
                     )
                     changes += 1
                     continue
+            # replace the value if the new value is different
             elif attr in ["leasehold_years"]:
                 if new_value != old_value:
                     setattr(self, attr, new_value)
