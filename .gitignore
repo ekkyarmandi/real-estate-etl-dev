@@ -2,6 +2,7 @@
 __pycache__/
 archive/
 .venv/
+.vscode/
 alembic*
 
 # files
