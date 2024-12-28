@@ -24,7 +24,7 @@ from reid.customs.ubudproperty import (
 )
 
 
-class UbudpropertySpider(scrapy.Spider):
+class UbudPropertySpider(scrapy.Spider):
     name = "ubudproperty"
     allowed_domains = ["ubudproperty.com"]
     start_urls = [
@@ -45,8 +45,7 @@ class UbudpropertySpider(scrapy.Spider):
             if url not in self.visited:
                 self.visited.append(url)
                 yield scrapy.Request(
-                    url,
-                    callback=self.parse_detail,
+                    url, callback=self.parse_detail, errback=self.handle_error
                 )
 
         # fetch existing urls
@@ -54,8 +53,7 @@ class UbudpropertySpider(scrapy.Spider):
             if url not in self.visited:
                 self.visited.append(url)
                 yield scrapy.Request(
-                    url,
-                    callback=self.parse_detail,
+                    url, callback=self.parse_detail, errback=self.handle_error
                 )
 
         # do pagination
@@ -182,6 +180,20 @@ class UbudpropertySpider(scrapy.Spider):
             error = Error(
                 url=response.url,
                 error_message=str(err),
+            )
+            # Capture the traceback and add it to the error message
+            tb = traceback.format_exc()
+            error.error_message += f"\nTraceback:\n{tb}"
+            db = next(get_db())
+            db.add(error)
+            db.commit()
+
+    def handle_error(self, failure):
+        if 400 <= failure.value.response.status < 500:
+            self.logger.error(f"Request failed: {failure.request.url}")
+            error = Error(
+                url=failure.request.url,
+                error_message=str(failure.value),
             )
             # Capture the traceback and add it to the error message
             tb = traceback.format_exc()

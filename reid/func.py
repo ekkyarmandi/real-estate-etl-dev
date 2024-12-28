@@ -851,3 +851,17 @@ def standardize_property_type(property_type: str) -> str:
     # remove "for Sale" keywords from property type
     property_type = str(property_type).replace(" for Sale", "")
     return property_type
+
+
+def find_bedrooms_in_description(text):
+    if "bedroom" in text:
+        result = re.search(r"\b\d{1,2}.*?bedroom", text, re.IGNORECASE)
+        if result:
+            text = result.group()
+            numbers = re.findall(r"\d{1,2}", text)
+            n = re.search(r"bedroom", text).start()
+            p = "({}).*?bedroom"
+            closest = [n - re.search(p.format(i), text).start() for i in numbers]
+            x = closest.index(min(closest))
+            beds = numbers[x]
+            return int(beds)

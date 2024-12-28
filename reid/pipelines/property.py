@@ -161,7 +161,7 @@ class ListingPipeline:
                     db.commit()
                 except Exception as e:
                     db.rollback()
-            # TODO: check if listing is duplicated from same source
+            # check if listing is duplicated from same source
             similar_listing = (
                 db.query(Listing)
                 .filter(
