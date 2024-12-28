@@ -31,6 +31,8 @@ class UbudpropertySpider(scrapy.Spider):
         "https://ubudproperty.com/listing-villaforsale",
         "https://ubudproperty.com/listing-landforsale",
     ]
+    scraped_at = None
+    existing_urls = []
     visited = []
 
     def parse(self, response):
@@ -38,7 +40,7 @@ class UbudpropertySpider(scrapy.Spider):
         codes = response.css("a:contains(Detail)::attr(href)").getall()
         urls = list(map(lambda x: urljoin(response.url, x), codes))
         urls = list(filter(lambda x: x not in self.visited, urls))
-        # yield scrapy.Request(urls[0], callback=self.parse_detail)
+        urls = list(filter(lambda x: x not in self.existing_urls, urls))
         for url in urls:
             if url not in self.visited:
                 self.visited.append(url)
@@ -46,6 +48,16 @@ class UbudpropertySpider(scrapy.Spider):
                     url,
                     callback=self.parse_detail,
                 )
+
+        # fetch existing urls
+        for url in self.existing_urls:
+            if url not in self.visited:
+                self.visited.append(url)
+                yield scrapy.Request(
+                    url,
+                    callback=self.parse_detail,
+                )
+
         # do pagination
         last_page = response.css("ul.pagination li:contains(Last) a::attr(href)").get()
         if last_page:
@@ -61,10 +73,12 @@ class UbudpropertySpider(scrapy.Spider):
                     yield scrapy.Request(next_page, callback=self.parse)
 
     def parse_detail(self, response):
+        this_month = datetime.now().replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0, month=1, year=2025
+        )
+        this_month = this_month.strftime(r"%Y-%m-%d")
+        self.scraped_at = this_month
         try:
-            this_month = datetime.now().replace(
-                day=1, hour=0, minute=0, second=0, microsecond=0
-            )
             loader = ItemLoader(item=PropertyItem(), selector=response)
             # collect raw data
             loader.add_value("source", "Ubud Property")

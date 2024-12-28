@@ -157,6 +157,6 @@ ZONING_CATEGORIES = {
 }
 
 # Logging configuration
-# LOG_LEVEL = "INFO"
+LOG_LEVEL = "ERROR"
 # LOG_FILE = "scrapy.log"
 # LOG_SETTINGS = "logging.conf"

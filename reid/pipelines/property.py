@@ -1,3 +1,4 @@
+from models.duplicate_listing import DuplicateListing
 from models.listing import Listing
 from reid.database import get_db
 from models.property import Property
@@ -6,16 +7,16 @@ from models.error import Error
 from models.report import Report
 from scrapy.exceptions import DropItem
 from datetime import datetime
+import logging
 
 
 class RawDataPipeline:
     def __init__(self):
         self.source = None
-        self.scraped_at = None
 
     def process_item(self, item, spider):
         self.source = item["source"]
-        self.scraped_at = item["scraped_at"]
+        self.scraped_at = spider.scraped_at
         # store raw data
         db = next(get_db())
         raw_data_item = dict(
@@ -29,6 +30,23 @@ class RawDataPipeline:
         item = dict(item)
         item["raw_data_id"] = raw_data.id
         return item
+
+    def open_spider(self, spider):
+        # load existing and still available listing urls
+        db = next(get_db())
+        source_name = spider.name
+        listings = (
+            db.query(Listing)
+            .filter(
+                Listing.is_available == True,
+                Listing.is_excluded == False,
+                Listing.excluded_by == None,
+                Listing.url.like(f"%{source_name}%"),
+            )
+            .all()
+        )
+        existing_urls = [listing.url for listing in listings]
+        spider.existing_urls = existing_urls
 
     def close_spider(self, spider):
         # get spider stats
@@ -44,8 +62,6 @@ class RawDataPipeline:
             response_error_count=stats.get("log_count/ERROR", 0),
             elapsed_time_seconds=elapsed_time.total_seconds(),
         )
-        # with open("spider_stats.txt", "w") as f:
-        #     f.write(str(spider_stats))
         report = Report(**spider_stats)
         db = next(get_db())
         db.add(report)
@@ -53,6 +69,11 @@ class RawDataPipeline:
 
 
 class PropertyPipeline:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        handler = logging.FileHandler("dropped_items.log")
+        self.logger.addHandler(handler)
+
     def process_item(self, item, spider):
         # remove unnecessary fields after raw data
         item.pop("html", None)
@@ -89,12 +110,19 @@ class PropertyPipeline:
                     db.delete(raw_data)
                     db.commit()
             # drop the item
-            raise DropItem(f"Error on PropertyPipeline insertion: {e}")
+            error_message = f"Error on PropertyPipeline insertion: {e}"
+            self.logger.error(error_message)
+            raise DropItem(error_message)
         item.pop("id", None)
         return item
 
 
 class ListingPipeline:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        handler = logging.FileHandler("dropped_items.log")
+        self.logger.addHandler(handler)
+
     def process_item(self, item, spider):
         # remove raw_data_id
         item.pop("raw_data_id", None)
@@ -109,6 +137,55 @@ class ListingPipeline:
             # remove error related to the listing if exists
             db.query(Error).filter(Error.url == item.get("url")).delete()
             db.commit()
+            # check if listing is duplicated from other sources
+            similar_listing = (
+                db.query(Listing)
+                .filter(
+                    Listing.price == listing.price,
+                    Listing.contract_type == listing.contract_type,
+                    Listing.bedrooms == listing.bedrooms,
+                    Listing.bathrooms == listing.bathrooms,
+                    Listing.land_size == listing.land_size,
+                    Listing.build_size == listing.build_size,
+                    Listing.source != listing.source,
+                )
+                .first()
+            )
+            if similar_listing:
+                duplicate_listing = DuplicateListing(
+                    source_url=similar_listing.url,
+                    duplicate_url=listing.url,
+                )
+                try:
+                    db.add(duplicate_listing)
+                    db.commit()
+                except Exception as e:
+                    db.rollback()
+            # TODO: check if listing is duplicated from same source
+            similar_listing = (
+                db.query(Listing)
+                .filter(
+                    Listing.price == listing.price,
+                    Listing.contract_type == listing.contract_type,
+                    Listing.bedrooms == listing.bedrooms,
+                    Listing.bathrooms == listing.bathrooms,
+                    Listing.land_size == listing.land_size,
+                    Listing.build_size == listing.build_size,
+                    Listing.source == listing.source,
+                    Listing.url != listing.url,
+                )
+                .first()
+            )
+            if similar_listing:
+                duplicate_listing = DuplicateListing(
+                    source_url=similar_listing.url,
+                    duplicate_url=listing.url,
+                )
+                try:
+                    db.add(duplicate_listing)
+                    db.commit()
+                except Exception as e:
+                    db.rollback()
         except Exception as e:
             db.rollback()
             # on constraint conflict do update

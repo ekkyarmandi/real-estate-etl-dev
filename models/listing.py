@@ -63,6 +63,10 @@ class Listing(Base):
             self.tab = "LUXURY LISTINGS"
         elif self.price >= 5000000 and self.currency == "USD":
             self.tab = "LUXURY LISTINGS"
+        elif self.property_type == "Land":
+            self.tab = "ALL LAND"
+        else:
+            self.tab = "DATA"
 
     def compare(self, new_data):
         changes = 0
@@ -116,3 +120,6 @@ class Listing(Base):
                 setattr(self, attr, new_value)
                 changes += 1
         return changes > 0
+
+    def __repr__(self):
+        return f"<Listing UUID='{self.id}'>"

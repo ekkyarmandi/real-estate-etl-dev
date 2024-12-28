@@ -5,3 +5,4 @@ from models.listing import Listing
 from models.tags import Tag
 from models.error import Error
 from models.report import Report
+from models.duplicate_listing import DuplicateListing
