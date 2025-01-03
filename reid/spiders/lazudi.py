@@ -1,6 +1,7 @@
 import scrapy
 from datetime import datetime
 import traceback
+from models.listing import Listing
 from reid.spiders.base import BaseSpider
 from models.error import Error
 from reid.database import get_db
@@ -15,40 +16,45 @@ from reid.func import (
     remove_show_more_less,
     landsize_extractor,
     buildsize_extractor,
+    first_month,
 )
 
 
 class LazudiSpider(BaseSpider):
     name = "lazudi"
     allowed_domains = ["lazudi.com"]
-    start_urls = [
-        "https://lazudi.com/id-en/properties/for-sale/bali",
-    ]
+    start_urls = ["https://lazudi.com/id-en/properties/for-sale/bali"]
 
     def parse(self, response):
         urls = response.css("#properties_list a::attr(href)").getall()
         # filter out existing and visited listings
         urls = list(filter(lambda x: x not in self.existing_urls, urls))
-        urls = list(filter(lambda x: x not in self.visited, urls))
+        urls = list(filter(lambda x: x not in self.visited_urls, urls))
         # crawl new listings
         for url in urls:
-            if not url in self.visited:
-                self.visited.append(url)
+            if not url in self.visited_urls:
+                self.visited_urls.append(url)
                 yield response.follow(
-                    url, callback=self.parse_detail, errback=self.handle_error
+                    url,
+                    callback=self.parse_detail,
+                    errback=self.handle_error,
+                    meta=dict(redirected_from=url),
                 )
         # crawl existing listings
         for url in self.existing_urls:
-            if not url in self.visited:
-                self.visited.append(url)
+            if not url in self.visited_urls:
+                self.visited_urls.append(url)
                 yield response.follow(
-                    url, callback=self.parse_detail, errback=self.handle_error
+                    url,
+                    callback=self.parse_detail,
+                    errback=self.handle_error,
+                    meta=dict(redirected_from=url),
                 )
         next_page = response.css(
             "#properties_pagination li a[rel*=next]::attr(href)"
         ).get()
-        # if next_page:
-        #     yield response.follow(next_page, callback=self.parse)
+        if next_page:
+            yield response.follow(next_page, callback=self.parse)
 
     def get_detail(self, rows):
         output = {"contract_type": "Leasehold"}
@@ -74,11 +80,31 @@ class LazudiSpider(BaseSpider):
         return output
 
     def parse_detail(self, response):
-        this_month = datetime.now().replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        )
-        this_month = this_month.strftime(r"%Y-%m-%d")
-        self.scraped_at = this_month
+        # check if it's redirected from
+        origin_url = response.meta.get("redirected_from", None)
+        if origin_url != response.url:
+            # update the availability status to delisted
+            db = next(get_db())
+            db.query(Listing).filter(Listing.url == origin_url).update(
+                {
+                    "availability": "Delisted",
+                    "is_available": False,
+                    "sold_at": datetime.now().replace(
+                        day=1,
+                        hour=0,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
+                    ),
+                }
+            )
+            db.commit()
+            return {
+                "source": "Lazudi",
+                "scraped_at": self.scraped_at,
+                "url": origin_url,
+                "skip": True,
+            }
         try:
             # parse listing
             rows = response.css(
@@ -88,7 +114,7 @@ class LazudiSpider(BaseSpider):
 
             loader = ItemLoader(item=PropertyItem(), selector=response)
             loader.add_value("source", "Lazudi")
-            loader.add_value("scraped_at", this_month)
+            loader.add_value("scraped_at", self.scraped_at)
             loader.add_value("url", response.url)
             loader.add_value("html", response.text)
             loader.add_value("listed_date", details.get("created", ""))
@@ -150,6 +176,7 @@ class LazudiSpider(BaseSpider):
         except Exception as err:
             error = Error(
                 url=response.url,
+                source="Spider",
                 error_message=str(err),
             )
             # Capture the traceback and add it to the error message

@@ -132,16 +132,20 @@ class Property(Base):
                     if "UNIQUE constraint failed" not in str(e):
                         raise e
 
-    def _has_off_plan(self, str):
+    def _has_off_plan(self, text: str) -> bool:
         off_plans = ["off plan", "offplan", "off-plan", "under construction"]
-        return any([i in str.strip().lower() for i in off_plans])
+        if text:
+            has_off_plan = any([i in text.strip().lower() for i in off_plans])
+            return has_off_plan
+        return False
 
-    def _normalize_off_plan(self, text):
-        pattern = r"off.*?plan"
-        result = re.search(pattern, text, re.IGNORECASE)
-        if result:
-            keyword = result.group()
-            text = re.sub(keyword, "off-plan", text)
+    def _normalize_off_plan(self, text: str) -> str:
+        if text:
+            pattern = r"off.*?plan"
+            result = re.search(pattern, text, re.IGNORECASE)
+            if result:
+                keyword = result.group()
+                text = re.sub(keyword, "off-plan", text)
         return text
 
     def define_land_zoning(self):
@@ -161,15 +165,16 @@ class Property(Base):
         elif result2:
             self.land_zoning = result2
 
-    def _split_text(self, text):
+    def _split_text(self, text: str) -> list:
         buckets = []
-        # regex sub "\n:\n" or "\n:" to ":"
-        text = re.sub(r"\n:+\n", ":", text)
-        text = re.sub(r"(?<=:)\n+", " ", text).lower()
-        splitted = text.split("\n")
-        for line in splitted:
-            cols = line.split(".")
-            buckets.extend(cols)
+        if text:
+            # regex sub "\n:\n" or "\n:" to ":"
+            text = re.sub(r"\n:+\n", ":", text)
+            text = re.sub(r"(?<=:)\n+", " ", text).lower()
+            splitted = text.split("\n")
+            for line in splitted:
+                cols = line.split(".")
+                buckets.extend(cols)
         return buckets
 
     def _identify_zone_color(self, collections):

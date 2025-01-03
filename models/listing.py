@@ -42,7 +42,13 @@ class Listing(Base):
 
     def reid_id_generator(self, db):
         code = REID_CODE[self.source]
-        yr_mo = datetime.now().strftime(f"REID_%y_%m_{code}")
+        # TEMPORARY FIX
+        today = datetime.now().replace(
+            day=1,
+            month=1,
+            year=2025,
+        )
+        yr_mo = today.strftime(f"REID_%y_%m_{code}")
         q = text(
             "SELECT reid_id FROM listing WHERE reid_id LIKE :yr_mo ORDER BY reid_id DESC LIMIT 1;"
         )
@@ -69,6 +75,7 @@ class Listing(Base):
             self.tab = "DATA"
 
     def compare(self, new_data):
+        self.changes = []
         changes = 0
         fields_to_compare = [
             "price",
@@ -95,6 +102,9 @@ class Listing(Base):
             new_value = new_data.get(attr)
             if attr == "availability":
                 if new_value != "Available":
+                    self.changes.append(
+                        {"field": "availability", "old": old_value, "new": new_value}
+                    )
                     self.is_available = False
                     self.sold_at = datetime.now().replace(
                         day=1,
@@ -108,18 +118,26 @@ class Listing(Base):
             # replace the value if the new value is different
             elif attr in ["leasehold_years"]:
                 if new_value != old_value:
+                    self.changes.append(
+                        {"field": attr, "old": old_value, "new": new_value}
+                    )
                     setattr(self, attr, new_value)
                     changes += 1
                     continue
             # fill the missing value
             if new_value and not old_value:
+                self.changes.append({"field": attr, "old": old_value, "new": new_value})
                 setattr(self, attr, new_value)
                 changes += 1
             # override the value if the new value is different and not empty
             elif new_value and old_value and new_value != old_value:
+                self.changes.append({"field": attr, "old": old_value, "new": new_value})
                 setattr(self, attr, new_value)
                 changes += 1
         return changes > 0
+
+    def get_changes(self):
+        return self.changes
 
     def __repr__(self):
         return f"<Listing UUID='{self.id}'>"

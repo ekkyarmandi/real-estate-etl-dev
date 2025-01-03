@@ -29,9 +29,13 @@ def find_leasehold_years(text: str) -> str | float:
     results = list(
         map(
             lambda x: (
-                abs(int(x) - CURRENT_YEAR) if "year" not in x else float(x.strip(" year"))
+                abs(int(x) - CURRENT_YEAR)
+                if "year" not in x
+                else float(x.strip(" year"))
             ),
             results,
         )
     )
+    if not results:
+        return None
     return max(results)

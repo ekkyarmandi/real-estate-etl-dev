@@ -40,7 +40,7 @@ def find_usd(text: str) -> int | None:
     """
     Find USD within the text and return it as integer or None value
     """
-    result = re.search(r"USD\s*(?P<price>[0-9.,]+)", text)
+    result = re.search(r"USD\s*(?P<price>[0-9.,]+)", text, re.IGNORECASE)
     if result:
         price = result.group("price").replace(",", "")
         try:
@@ -54,7 +54,7 @@ def find_idr(text: str) -> int | None:
     """
     Find IDR within the text and return it as integer or None value
     """
-    result = re.search(r"IDR\s*(?P<price>[0-9.,]+)", text)
+    result = re.search(r"IDR\s*(?P<price>[0-9.,]+)", text, re.IGNORECASE)
     if result:
         price = result.group("price").replace(",", "").replace(".", "")
         return int(price)
@@ -381,12 +381,10 @@ def find_leasehold_years_bahasa_indonesia(text):
     ]
     text = re.sub(r"\n", " ", text)
     for p in patterns:
-        if not result:
-            try:
-                result = re.search(p, text, re.IGNORECASE).group("years")
-            except:
-                pass
-    return result
+        result = re.search(p, text, re.IGNORECASE)
+        if result:
+            return result.group("years")
+    return None
 
 
 def count_lease_years(text: str) -> int | None:
@@ -865,3 +863,14 @@ def find_bedrooms_in_description(text):
             x = closest.index(min(closest))
             beds = numbers[x]
             return int(beds)
+
+
+def first_month() -> datetime:
+    date = datetime.now()
+    date = date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return date.strftime("%Y-%m-%d")
+
+
+def extract_currency(text):
+    match = re.search(r"IDR|USD", text, re.IGNORECASE)
+    return match.group() if match else None

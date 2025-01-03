@@ -8,7 +8,7 @@ from reid.database import get_db
 from models.error import Error
 import re
 import traceback
-
+from reid.spiders.base import BaseSpider
 from reid.func import (
     define_property_type,
     find_build_size,
@@ -24,34 +24,31 @@ from reid.customs.ubudproperty import (
 )
 
 
-class UbudPropertySpider(scrapy.Spider):
+class UbudPropertySpider(BaseSpider):
     name = "ubudproperty"
     allowed_domains = ["ubudproperty.com"]
     start_urls = [
         "https://ubudproperty.com/listing-villaforsale",
         "https://ubudproperty.com/listing-landforsale",
     ]
-    scraped_at = None
-    existing_urls = []
-    visited = []
 
     def parse(self, response):
         # collect urls
         codes = response.css("a:contains(Detail)::attr(href)").getall()
         urls = list(map(lambda x: urljoin(response.url, x), codes))
-        urls = list(filter(lambda x: x not in self.visited, urls))
+        urls = list(filter(lambda x: x not in self.visited_urls, urls))
         urls = list(filter(lambda x: x not in self.existing_urls, urls))
         for url in urls:
-            if url not in self.visited:
-                self.visited.append(url)
+            if url not in self.visited_urls:
+                self.visited_urls.append(url)
                 yield scrapy.Request(
                     url, callback=self.parse_detail, errback=self.handle_error
                 )
 
         # fetch existing urls
         for url in self.existing_urls:
-            if url not in self.visited:
-                self.visited.append(url)
+            if url not in self.visited_urls:
+                self.visited_urls.append(url)
                 yield scrapy.Request(
                     url, callback=self.parse_detail, errback=self.handle_error
                 )
@@ -66,21 +63,16 @@ class UbudPropertySpider(scrapy.Spider):
                 next_page = response.url + "=" + str(i)
                 footprint = response.url.split("/")[-1].split("=")[0].split("-")[-1]
                 footprint += "=" + str(i)
-                if footprint not in self.visited:
-                    self.visited.append(footprint)
+                if footprint not in self.visited_urls:
+                    self.visited_urls.append(footprint)
                     yield scrapy.Request(next_page, callback=self.parse)
 
     def parse_detail(self, response):
-        this_month = datetime.now().replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0, month=1, year=2025
-        )
-        this_month = this_month.strftime(r"%Y-%m-%d")
-        self.scraped_at = this_month
         try:
             loader = ItemLoader(item=PropertyItem(), selector=response)
             # collect raw data
             loader.add_value("source", "Ubud Property")
-            loader.add_value("scraped_at", this_month)
+            loader.add_value("scraped_at", self.scraped_at)
             loader.add_value("url", response.url)
             loader.add_value("html", response.text)
             # pre processed data
@@ -93,7 +85,10 @@ class UbudPropertySpider(scrapy.Spider):
             sources = response.css("img[src]::attr(src)").getall()
             publish_dates = list(map(extract_publish_date, sources))
             publish_dates = list(filter(lambda d: d, publish_dates))
-            pdate = max(publish_dates)
+            if publish_dates:
+                pdate = max(publish_dates)
+            else:
+                pdate = None
             ## finding leasehold years
             leasehold_years_text = response.css("h5 ::Text").get()
             # template selector
@@ -150,7 +145,7 @@ class UbudPropertySpider(scrapy.Spider):
             ## define property type
             bedrooms = item.get("bedrooms", 0)
             property_type = item.get("property_type", "")
-            if property_type not in ["Villa", "Land", "House"]:
+            if title and property_type not in ["Villa", "Land", "House"]:
                 result = re.search(
                     r"(land|hotel|villa)", title, re.IGNORECASE
                 )  # find land,hotel,and villa keyword in title
@@ -179,21 +174,8 @@ class UbudPropertySpider(scrapy.Spider):
         except Exception as err:
             error = Error(
                 url=response.url,
+                source="Spider",
                 error_message=str(err),
-            )
-            # Capture the traceback and add it to the error message
-            tb = traceback.format_exc()
-            error.error_message += f"\nTraceback:\n{tb}"
-            db = next(get_db())
-            db.add(error)
-            db.commit()
-
-    def handle_error(self, failure):
-        if 400 <= failure.value.response.status < 500:
-            self.logger.error(f"Request failed: {failure.request.url}")
-            error = Error(
-                url=failure.request.url,
-                error_message=str(failure.value),
             )
             # Capture the traceback and add it to the error message
             tb = traceback.format_exc()

@@ -63,7 +63,7 @@ DEFAULT_REQUEST_HEADERS = {
 #     "scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware": 1,
 #     "scrapy_proxies.RandomProxy": 100,
 # }
-# # See scrapy-proxies docs https://github.com/aivarsk/scrapy-proxies
+# See scrapy-proxies docs https://github.com/aivarsk/scrapy-proxies
 # PROXY_LIST = "new-proxy.txt"
 # PROXY_MODE = 0
 
@@ -157,6 +157,6 @@ ZONING_CATEGORIES = {
 }
 
 # Logging configuration
-LOG_LEVEL = "ERROR"
+LOG_LEVEL = "DEBUG"
 # LOG_FILE = "scrapy.log"
 # LOG_SETTINGS = "logging.conf"
