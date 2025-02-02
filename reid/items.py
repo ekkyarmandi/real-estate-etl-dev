@@ -9,6 +9,7 @@ from itemloaders.processors import TakeFirst, MapCompose
 from reid.func import (
     AnySoldDelisted,
     JoinAndStrip,
+    extract_currency,
     standardize_property_type,
     to_number,
 )
@@ -61,7 +62,8 @@ class PropertyItem(scrapy.Item):
         input_processor=MapCompose(to_number), output_processor=TakeFirst()
     )
     currency = scrapy.Field(
-        input_processor=MapCompose(str.strip, str.upper), output_processor=TakeFirst()
+        input_processor=MapCompose(str.strip, str.upper, extract_currency),
+        output_processor=TakeFirst(),
     )
     image_url = scrapy.Field(
         input_processor=MapCompose(str.strip), output_processor=TakeFirst()
