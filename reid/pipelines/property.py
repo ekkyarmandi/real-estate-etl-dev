@@ -134,8 +134,6 @@ class ListingPipeline:
     def process_item(self, item, spider):
         if item.get("skip", False):
             return item
-        # declare update flag
-        update = False
         # remove raw_data_id
         item.pop("raw_data_id", None)
         # add listing to db

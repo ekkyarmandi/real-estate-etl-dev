@@ -40,7 +40,7 @@ def find_usd(text: str) -> int | None:
     """
     Find USD within the text and return it as integer or None value
     """
-    result = re.search(r"USD\s*(?P<price>[0-9.,]+)", text, re.IGNORECASE)
+    result = re.search(r"USD\s*(?P<price>[0-9.,]+)", str(text), re.IGNORECASE)
     if result:
         price = result.group("price").replace(",", "")
         try:
@@ -741,11 +741,10 @@ def find_off_plan(title: str, description: str, labels: list = []) -> bool:
 
 
 def find_bedrooms(text: str) -> Union[str, None]:
-    try:
-        res = re.search(r"(\d{1,2}) [Bb]edroom(s?)", str(text)).group(1)
-        return int(res)
-    except AttributeError:
-        return None
+    result = re.search(r"(\d{1,2}) bedroom(s?)", str(text), re.IGNORECASE)
+    if result:
+        return int(result.group(1))
+    return None
 
 
 def extractor(pattern: str, text: str, func: Callable) -> Union[int, None]:
@@ -872,5 +871,14 @@ def first_month() -> datetime:
 
 
 def extract_currency(text):
-    match = re.search(r"IDR|USD", text, re.IGNORECASE)
+    match = re.search(r"\bIDR\b|\bUSD\b|\bRp\b", text, re.IGNORECASE)
     return match.group() if match else None
+
+
+def identify_currency(text: str) -> str:
+    if re.search(r"\bIDR\b|\bRp\b", text, re.IGNORECASE):
+        return "IDR"
+    elif re.search(r"\bUSD\b", text, re.IGNORECASE):
+        return "USD"
+    else:
+        return None
