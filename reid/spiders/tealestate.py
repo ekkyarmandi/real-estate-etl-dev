@@ -65,6 +65,10 @@ class TealestateSpider(BaseSpider):
             get_last = lambda text, sep: str(text).split(sep)[-1]
             ## extractions main logic
             loader = ItemLoader(item=PropertyItem(), selector=response)
+            loader.add_value("source", "Teal Estate")
+            loader.add_value("scraped_at", self.scraped_at)
+            loader.add_value("url", response.url)
+            loader.add_value("html", response.text)
 
             labels = response.css(
                 ".elementor-widget-wrap.elementor-element-populated:has(.elementor-background-overlay) [role='button'] ::text"
@@ -149,10 +153,6 @@ class TealestateSpider(BaseSpider):
                 "h3.elementor-heading-title::text",
                 MapCompose(define_property_type),
             )
-
-            self.labels = loader.selector.css(
-                "div.elementor-widget span:contains(plan)::text"
-            ).getall()
 
             item = loader.load_item()
 

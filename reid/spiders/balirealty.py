@@ -22,7 +22,7 @@ import requests
 
 class BaliRealtySpider(BaseSpider):
     name = "balirealty"
-    allowed_domains = ["balirealty.com"]
+    allowed_domains = ["balirealty.com", "jsonplaceholder.typicode.com"]
 
     def start_requests(self):
         self.fakeurl = "https://jsonplaceholder.typicode.com/comments/1"
@@ -36,11 +36,11 @@ class BaliRealtySpider(BaseSpider):
     def _get_response(self, url):
         headers = {
             "Cookie": config("BALIREALTY_COOKIES"),
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
         }
         response = requests.get(url, headers=headers)
         return scrapy.http.TextResponse(
-            url=response.url,
+            url=url,
             body=response.text,
             encoding="utf-8",
         )
@@ -53,7 +53,7 @@ class BaliRealtySpider(BaseSpider):
             yield scrapy.Request(
                 self.fakeurl,
                 callback=self.parse_detail,
-                meta=dict(response=self._get_response(url)),
+                meta=dict(url=url, response=self._get_response(url)),
                 dont_filter=True,
             )
 
@@ -69,14 +69,15 @@ class BaliRealtySpider(BaseSpider):
 
     def parse_detail(self, response):
         not_valid_contract = (
-            lambda ctr: "free" not in ctr.lower() and "lease" not in ctr.lower()
+            lambda x: "free" not in x.lower() and "lease" not in x.lower()
         )
         try:
+            response_url = response.meta.get("url")
             response = response.meta.get("response")
             loader = ItemLoader(item=PropertyItem(), selector=response)
             loader.add_value("source", "Bali Realty")
             loader.add_value("scraped_at", self.scraped_at)
-            loader.add_value("url", response.url)
+            loader.add_value("url", response_url)
             loader.add_value("html", response.text)
 
             # Price handling
@@ -90,6 +91,7 @@ class BaliRealtySpider(BaseSpider):
                     loader.add_value("price", price_usd)
                     loader.add_value("currency", "USD")
             else:
+                delisted_item.update({"source": "Bali Realty"})
                 yield delisted_item
 
             # Published date

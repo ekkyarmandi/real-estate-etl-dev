@@ -5,6 +5,7 @@ from reid.func import (
     find_lease_years,
     get_uploaded_date,
     grab_first,
+    identify_currency,
 )
 from reid.items import PropertyItem
 from reid.spiders.base import BaseSpider
@@ -32,10 +33,10 @@ class SvahaPropertySpider(BaseSpider):
                 yield response.follow(url, callback=self.parse_detail)
 
         # fetch existing urls
-        for url in self.existing_urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(url, callback=self.parse_detail)
+        # for url in self.existing_urls:
+        #     if url not in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield response.follow(url, callback=self.parse_detail)
 
         # pagination
         next_url = response.css("nav.rtcl-pagination ul li a.next::attr(href)").get()
@@ -70,16 +71,18 @@ class SvahaPropertySpider(BaseSpider):
             # contract type
             contract_type = d.get("Status", d.get("Purpose", ""))
             if "sale" in contract_type.lower():
-                contract_type = "Freehold"
-            property_type = d.get("Type", "")
-            property_contract = " ".join([contract_type, property_type])
-
+                loader.add_value("contract_type", "Freehold")
+            else:
+                loader.add_value("contract_type", "Leasehold")
+            loader.add_value("property_type", d.get("Type", ""))
             # assign data into item loader
             loader.add_value("availability_label", "Available")
-            loader.add_css("price", "div.product-price bdi:contains(Rp) ::text")
-            loader.add_value("contract_type", contract_type)
-            loader.add_value("contract_type", contract_type)
-            loader.add_value("property_type", property_type)
+            loader.add_css("price", "div.product-price ::text")
+            loader.add_css(
+                "currency",
+                "div.product-price ::text",
+                MapCompose(identify_currency),
+            )
             loader.add_value("property_id", d.get("Villa ID"))
             loader.add_value("bedrooms", d.get("Bedroom"))
             loader.add_value("bathrooms", d.get("Bath"))
@@ -100,10 +103,11 @@ class SvahaPropertySpider(BaseSpider):
                 ),
             )
             loader.add_css("description", "div.product-description p ::Text")
-            loader.add_css(
-                "leasehold_years",
-                "div.product-details li:contains(Leasehold) span[class*=value]::text",
-            )
+            if contract_type == "Leasehold":
+                loader.add_css(
+                    "leasehold_years",
+                    "div.product-details li:contains(Leasehold) span[class*=value]::text",
+                )
             item = loader.load_item()
             # refind the leasehold years
             years = item.get("leasehold_years")

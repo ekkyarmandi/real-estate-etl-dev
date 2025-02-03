@@ -96,6 +96,7 @@ class Listing(Base):
             "land_zoning",
             "property_id",
             "listed_date",
+            "sold_at",
         ]
         for attr in fields_to_compare:
             old_value = getattr(self, attr)
@@ -115,8 +116,11 @@ class Listing(Base):
                     )
                     changes += 1
                     continue
+            elif attr == "price" and new_value == -1:
+                self.price = old_value
+                continue
             # replace the value if the new value is different
-            elif attr in ["leasehold_years"]:
+            elif attr in ["leasehold_years", "sold_at"]:
                 if new_value != old_value:
                     self.changes.append(
                         {"field": attr, "old": old_value, "new": new_value}

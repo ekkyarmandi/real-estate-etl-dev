@@ -1,5 +1,6 @@
 # Scrapy settings for reid project
 import scrapy
+from decouple import config
 
 # For simplicity, this file contains only settings considered important or
 # commonly used. You can find more settings consulting the documentation:
@@ -58,14 +59,17 @@ DEFAULT_REQUEST_HEADERS = {
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
-# DOWNLOADER_MIDDLEWARES = {
-#     # "reid.middlewares.PropertiesDownloaderMiddleware": 543,
-#     "scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware": 1,
-#     "scrapy_proxies.RandomProxy": 100,
-# }
+DOWNLOADER_MIDDLEWARES = {
+    # "props.middlewares.PropertiesDownloaderMiddleware": 543,
+    # "scrapy.downloadermiddlewares.retry.RetryMiddleware": 90,
+    # "scrapy_proxies.RandomProxy": 100,
+    # "scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware": 110,
+}
 # See scrapy-proxies docs https://github.com/aivarsk/scrapy-proxies
 # PROXY_LIST = "new-proxy.txt"
-# PROXY_MODE = 0
+
+PROXY_MODE = 2
+CUSTOM_PROXY = config("PROXYSCRAPE_CREDENTIALS")
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
@@ -157,6 +161,6 @@ ZONING_CATEGORIES = {
 }
 
 # Logging configuration
-LOG_LEVEL = "DEBUG"
+# LOG_LEVEL = "INFO"
 # LOG_FILE = "scrapy.log"
 # LOG_SETTINGS = "logging.conf"

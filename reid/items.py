@@ -62,7 +62,7 @@ class PropertyItem(scrapy.Item):
         input_processor=MapCompose(to_number), output_processor=TakeFirst()
     )
     currency = scrapy.Field(
-        input_processor=MapCompose(str.strip, str.upper, extract_currency),
+        input_processor=MapCompose(str.strip, str.upper),
         output_processor=TakeFirst(),
     )
     image_url = scrapy.Field(

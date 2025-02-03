@@ -1,27 +1,21 @@
 import scrapy
-from urllib.parse import urljoin
 from scrapy.loader import ItemLoader
-from datetime import datetime
 from reid.items import PropertyItem
 from itemloaders.processors import MapCompose
 from reid.database import get_db
 from models.error import Error
 import jmespath
+import json
 import re
 import traceback
 from reid.spiders.base import BaseSpider
 from reid.func import (
     define_property_type,
     find_build_size,
-    find_idr,
-    find_land_size,
     find_lease_years,
-    find_usd,
     get_icons,
 )
 from urllib.parse import urlencode
-
-from reid.customs.balitreasureproperties import find_page_number
 
 
 class BaliTreasurePropertiesSpider(BaseSpider):
@@ -78,118 +72,125 @@ class BaliTreasurePropertiesSpider(BaseSpider):
             )
 
     def parse_detail(self, response):
-        ## lambda functions ##
-        has_leasehold = lambda text: re.search(r"lease", text, re.IGNORECASE)
-        get_first = lambda str, separator: str.split(separator)[0]
-        get_last = lambda str, separator: str.split(separator)[-1]
-        ## main logic ##
-        data = response.meta.get("data", {})
-        loader = ItemLoader(item=PropertyItem(), selector=response)
-        loader.add_value("source", "Bali Treasure Properties")
-        loader.add_value("url", response.url)
-        loader.add_value("html", response.text)
-        loader.add_value("json", data)
-        loader.add_value("scraped_at", self.scraped_at)
-        # contract_types = response.css(".second_line a[rel*=property_id]::text").getall()
-        icons = get_icons(
-            response.css(
-                "div.p-property div.le_icons div.facility_icons::attr(title)"
+        try:
+            ## lambda functions ##
+            has_leasehold = lambda text: re.search(r"lease", text, re.IGNORECASE)
+            get_first = lambda str, separator: str.split(separator)[0]
+            get_last = lambda str, separator: str.split(separator)[-1]
+            ## main logic ##
+            data = response.meta.get("data", {})
+            loader = ItemLoader(item=PropertyItem(), selector=response)
+            loader.add_value("source", "Bali Treasure Properties")
+            loader.add_value("url", response.url)
+            loader.add_value("html", response.text)
+            loader.add_value("json", json.dumps(data))
+            loader.add_value("scraped_at", self.scraped_at)
+            # contract_types = response.css(".second_line a[rel*=property_id]::text").getall()
+            icons = get_icons(
+                response.css(
+                    "div.p-property div.le_icons div.facility_icons::attr(title)"
+                ).getall()
+            )
+
+            # new value
+            title = data.get("title")
+            property_id = data.get("_id")
+            contract_text = data.get("defaultListing")
+            property_text = data.get("listingType")
+            publish_date = data.get("_createdAt")
+            image_url = jmespath.search("image.asset.url", data)
+
+            loader.add_value("price", jmespath.search("listings[0].price.amount", data))
+            loader.add_value(
+                "currency", jmespath.search("listings[0].price.currency", data)
+            )
+
+            leasehold_years = jmespath.search("listings[0].period", data)
+
+            p = jmespath.search("description", data)
+            descriptions = [
+                jmespath.search(f"description[{x}].children[0].text", data)
+                for x in range(len(p))
+            ]
+
+            if has_leasehold(contract_text):
+                loader.add_value("contract_type", "Leasehold")
+                loader.add_value("leasehold_years", leasehold_years)
+            else:
+                loader.add_value("contract_type", "Freehold")
+
+            # convert date to YYYY-MM-DD
+            loader.add_value(
+                "listed_date",
+                publish_date,
+                MapCompose(lambda date: date.split("T")[0]),
+            )
+
+            # find location
+            city = jmespath.search("property.area.name", data)
+            subarea = jmespath.search("property.area.subarea.name", data)
+            loader.add_value("location", f"{subarea}, {city}")
+
+            loader.add_css("location", "div.p-property h1 + span.area strong::text")
+            loader.add_value("property_id", property_id)
+            loader.add_value("title", title)
+            loader.add_css(
+                "bedrooms",
+                "div[class*=card_facts] div:contains(Bedroom) p:first-child::Text",
+            )
+            loader.add_css(
+                "bathrooms",
+                "div[class*=card_facts] div:contains(Bathroom) p:first-child::Text",
+            )
+            loader.add_css(
+                "land_size",
+                "div[class*=card_facts] div:contains(Land) p:first-child span::Text",
+            )
+            loader.add_css(
+                "build_size",
+                "div[class*=card_facts] div:contains(Building) p:first-child span::Text",
+            )
+            loader.add_value("image_url", image_url)
+            loader.add_css(
+                "availability_label", "div.second_line div.availability strong::text"
+            )
+            loader.add_value("description", descriptions)
+            loader.add_value("availability_label", "Available")
+            item = loader.load_item()
+
+            title = item.get("title")
+            contract_type = item.get("contract_type")
+            if title and contract_type:
+                item["contract_type"] += " " + define_property_type(property_text)
+            else:
+                item["title"] = "N/A"
+                item["availability_label"] = "Delisted"
+
+            if not item.get("leasehold_years"):
+                item["leasehold_years"] = find_lease_years(item.get("description", ""))
+
+            self.labels = loader.selector.css(
+                "div.second_line div.availability strong::text"
             ).getall()
-        )
+            self.labels = list(
+                filter(lambda str: str != "", map(str.strip, self.labels))
+            )
 
-        # new value
-        title = data.get("title")
-        property_id = data.get("_id")
-        contract_text = data.get("defaultListing")
-        property_text = data.get("listingType")
-        publish_date = data.get("_createdAt")
-        image_url = jmespath.search("image.asset.url", data)
-
-        currency = jmespath.search("listings[0].price.currency", data)
-        price = jmespath.search("listings[0].price.amount", data)
-        if currency == "usd":
-            price_usd = price
-            price_idr = None
-        elif currency == "idr":
-            price_usd = None
-            price_idr = price
-
-        leasehold_years = jmespath.search("listings[0].period", data)
-
-        p = jmespath.search("description", data)
-        descriptions = [
-            jmespath.search(f"description[{x}].children[0].text", data)
-            for x in range(len(p))
-        ]
-
-        if has_leasehold(contract_text):
-            loader.add_value("contract_type", "Leasehold")
-            loader.add_value("leasehold_years", leasehold_years)
-        else:
-            loader.add_value("contract_type", "Freehold")
-
-        # collect price
-        loader.add_value("price", price_idr)
-        loader.add_value("price_usd", price_usd)
-
-        # convert date to YYYY-MM-DD
-        loader.add_value(
-            "listed_date",
-            publish_date,
-            MapCompose(lambda date: date.split("T")[0]),
-        )
-
-        # find location
-        city = jmespath.search("property.area.name", data)
-        subarea = jmespath.search("property.area.subarea.name", data)
-        loader.add_value("location", f"{subarea}, {city}")
-
-        loader.add_css("location", "div.p-property h1 + span.area strong::text")
-        loader.add_value("property_id", property_id)
-        loader.add_value("title", title)
-        loader.add_css(
-            "bedrooms",
-            "div[class*=card_facts] div:contains(Bedroom) p:first-child::Text",
-        )
-        loader.add_css(
-            "bathrooms",
-            "div[class*=card_facts] div:contains(Bathroom) p:first-child::Text",
-        )
-        loader.add_css(
-            "land_size",
-            "div[class*=card_facts] div:contains(Land) p:first-child span::Text",
-        )
-        loader.add_css(
-            "build_size",
-            "div[class*=card_facts] div:contains(Building) p:first-child span::Text",
-        )
-        loader.add_value("image_url", image_url)
-        loader.add_css(
-            "availability_label", "div.second_line div.availability strong::text"
-        )
-        loader.add_value("description", descriptions)
-        loader.add_value("availability_label", "Available")
-        item = loader.load_item()
-
-        title = item.get("title")
-        contract_type = item.get("contract_type")
-        if title and contract_type:
-            item["contract_type"] += " " + define_property_type(property_text)
-        else:
-            item["title"] = "N/A"
-            item["availability_label"] = "Delisted"
-
-        if not item.get("leasehold_years"):
-            item["leasehold_years"] = find_lease_years(item.get("description", ""))
-
-        self.labels = loader.selector.css(
-            "div.second_line div.availability strong::text"
-        ).getall()
-        self.labels = list(filter(lambda str: str != "", map(str.strip, self.labels)))
-
-        # get the building size from description
-        description = item.get("description", "")
-        build_size = item.get("build_size", None)
-        if description != "" and not build_size:
-            item["build_size"] = find_build_size(description)
-        return item
+            # get the building size from description
+            description = item.get("description", "")
+            build_size = item.get("build_size", None)
+            if description != "" and not build_size:
+                item["build_size"] = find_build_size(description)
+            yield item
+        except Exception as err:
+            error = Error(
+                url=response.url,
+                source="Spider",
+                error_message=str(err),
+            )
+            # Capture the traceback and add it to the error message
+            tb = traceback.format_exc()
+            error.error_message += f"\nTraceback:\n{tb}"
+            db = next(get_db())
+            db.add(error)
+            db.commit()

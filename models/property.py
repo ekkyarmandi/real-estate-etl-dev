@@ -141,9 +141,8 @@ class Property(Base):
 
     def _normalize_off_plan(self, text: str) -> str:
         if text:
-            pattern = r"off.*?plan"
-            result = re.search(pattern, text, re.IGNORECASE)
-            if result:
+            pattern = r"\boff([\s\d\w]+)plan\b"
+            if result := re.search(pattern, text, re.IGNORECASE):
                 keyword = result.group()
                 text = re.sub(keyword, "off-plan", text)
         return text

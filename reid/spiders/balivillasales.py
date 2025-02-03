@@ -3,16 +3,13 @@ from reid.items import PropertyItem
 from itemloaders.processors import MapCompose
 from reid.spiders.base import BaseSpider
 from reid.func import (
-    define_property_type,
     find_build_size,
     find_land_size,
     find_lease_years,
     find_location_in_desription,
-    get_lease_years,
     get_uploaded_date,
     get_first,
     find_bedrooms,
-    extract_currency,
     delisted_item,
 )
 from models.error import Error
@@ -121,9 +118,9 @@ class BaliVillaSalesSpider(BaseSpider):
             bedrooms = item.get("bedrooms")
             # Property type handling
             if title == "":
-                return delisted_item
+                yield delisted_item
             elif not contract_type:
-                return delisted_item
+                yield delisted_item
 
             # Location handling
             if not location:

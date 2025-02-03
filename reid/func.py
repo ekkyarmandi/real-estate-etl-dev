@@ -5,6 +5,7 @@ from itemloaders.processors import MapCompose, TakeFirst, Join
 from scrapy import Selector
 from w3lib.html import remove_tags
 import re
+import json
 
 ### lambda functions
 get_first = lambda text, sep: str(text).split(sep)[0]
@@ -221,16 +222,34 @@ def get_icons(icons):
 
 
 def get_uploaded_date(src, pattern=r"(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})"):
-    result = re.search(pattern, src)
-    if result:
-        try:
+    patterns = [
+        r"(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})",  # 2023-12-01
+        r"(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})",  # 20231201
+        r"(?P<year>\d{4})/(?P<month>\d{2})/",  # /2023/11/
+    ]
+    for i, p in enumerate(patterns):
+        if result := re.search(p, src):
             year = result.group("year")
             month = result.group("month")
-            day = result.group("day")
-            date = datetime(year=int(year), month=int(month), day=int(day))
-            return date.strftime("%m/%d/%y")
-        except:
-            return None
+            # validate the year
+            if not re.search(r"^20\d{2}$", year):
+                continue
+            # validate the day
+            if i == 2:
+                day = "01"
+            else:
+                day = result.group("day")
+            # validate the month
+            if int(month) > 12:
+                temp = month
+                month = day
+                day = temp
+            try:
+                date = datetime(year=int(year), month=int(month), day=int(day))
+                return date.strftime("%m/%d/%y")
+            except:
+                continue
+    return None
 
 
 def get_background_image(value):
@@ -871,14 +890,36 @@ def first_month() -> datetime:
 
 
 def extract_currency(text):
-    match = re.search(r"\bIDR\b|\bUSD\b|\bRp\b", text, re.IGNORECASE)
-    return match.group() if match else None
+    match = re.search(r"\bIDR\b|\bUSD\b|\bRp\b|(IDR)\d+|(USD)\d+", text, re.IGNORECASE)
+    if match:
+        try:
+            return match.group(1)
+        except IndexError:
+            return match.group()
+    return None
 
 
 def identify_currency(text: str) -> str:
-    if re.search(r"\bIDR\b|\bRp\b", text, re.IGNORECASE):
+    if re.search(r"\bIDR\b|\bRp\b|\bIDR\d+", text, re.IGNORECASE):
         return "IDR"
-    elif re.search(r"\bUSD\b", text, re.IGNORECASE):
+    elif re.search(r"\bUSD\b|\bUSD\d+", text, re.IGNORECASE):
         return "USD"
     else:
+        return None
+
+
+def json_string_to_dict(json_str):
+    """
+    Convert a JSON string to a Python dictionary.
+
+    Args:
+        json_str (str): A string in JSON format
+
+    Returns:
+        dict: The converted Python dictionary
+    """
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON: {e}")
         return None

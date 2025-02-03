@@ -6,10 +6,14 @@ from reid.spiders.base import BaseSpider
 from reid.func import (
     dimension_remover,
     find_lease_years,
+    define_property_type,
+    json_string_to_dict,
 )
 from models.error import Error
 from reid.database import get_db
+import jmespath
 import traceback
+import json
 import re
 import html2text
 import urllib.parse
@@ -47,9 +51,17 @@ class BaliPropertiesForSaleSpider(BaseSpider):
 
             for item in items:
                 url = f"https://balipropertiesforsale.com/property/{item['post']['post_name']}/"
-                yield scrapy.Request(
-                    url, callback=self.parse_detail, meta={"json_data": item}
-                )
+                if url not in self.visited_urls:
+                    self.visited_urls.append(url)
+                    yield scrapy.Request(
+                        url, callback=self.parse_detail, meta={"json_data": item}
+                    )
+
+            # fetch existing urls
+            for url in self.existing_urls:
+                if url not in self.visited_urls:
+                    self.visited_urls.append(url)
+                    yield scrapy.Request(url, callback=self.parse_detail)
 
             # Pagination
             count = data.get("count", 1)
@@ -91,12 +103,10 @@ class BaliPropertiesForSaleSpider(BaseSpider):
                 loader.add_value("property_id", i["overlay"]["property_id"])
 
                 # Prices
-                if "IDR" in i["overlay"]["prices"]:
-                    loader.add_value("price", i["overlay"]["prices"]["IDR"]["price"])
-                    loader.add_value("currency", "IDR")
-                if "USD" in i["overlay"]["prices"]:
-                    loader.add_value("price", i["overlay"]["prices"]["USD"]["price"])
-                    loader.add_value("currency", "USD")
+                loader.add_value("price", jmespath.search("overlay.price_raw", i))
+                loader.add_value(
+                    "currency", jmespath.search("overlay.price_currency", i)
+                )
 
                 # Images
                 if i["overlay"]["images"]:
@@ -108,7 +118,7 @@ class BaliPropertiesForSaleSpider(BaseSpider):
 
                 # List date
                 loader.add_value(
-                    "list_date",
+                    "listed_date",
                     i["post"]["post_date"],
                     MapCompose(to_mmddyy),
                 )
@@ -135,16 +145,21 @@ class BaliPropertiesForSaleSpider(BaseSpider):
                 )
 
                 # Availability
-                availability = "Sold" if i["overlay"]["is_sold"] else "Available"
-                loader.add_value("availability_label", availability)
+                is_sold = jmespath.search("overlay.is_sold", i)
+                if is_sold:
+                    price = jmespath.search("overlay.price_raw", i)
+                    if not price:
+                        loader.add_value("price", -1)
+                    loader.add_value("sold_at", i["post"]["post_date"])
+                    loader.add_value("availability_label", "Sold")
+                else:
+                    loader.add_value("availability_label", "Available")
 
                 # Contract and property type
-                contract_type = i["overlay"]["property_status"]
-                property_type = (
-                    i.get("overlay", {}).get("property_type", "").split(",")[0]
-                )
+                contract_type = jmespath.search("overlay.property_status", i)
+                property_type = jmespath.search("overlay.property_type", i)
                 loader.add_value("contract_type", contract_type)
-                loader.add_value("property_type", property_type)
+                loader.add_value("property_type", property_type.split(",")[0])
 
                 # Description
                 desc = md_converter.handle(i["post"]["post_content"])
@@ -153,6 +168,38 @@ class BaliPropertiesForSaleSpider(BaseSpider):
                 # Leasehold years
                 if "Leasehold" in contract_type:
                     loader.add_value("leasehold_years", i["overlay"]["expiration"])
+
+            else:
+                property_data = response.css(
+                    "#PropertyAgentPanel::attr(data-data)"
+                ).get()
+                data = json_string_to_dict(property_data)
+                ## source data
+                loader.add_value("json", json.dumps(data))
+                ## property data
+                loader.add_value("title", data.get("title"))
+                loader.add_value("property_id", data.get("property_id"))
+                loader.add_value("description", data.get("description"))
+                loader.add_value("price", data.get("price_raw"))
+                loader.add_value("currency", data.get("price_currency"))
+                loader.add_value("contract_type", data.get("property_status"))
+                loader.add_value("property_type", data.get("property_type"))
+                loader.add_value("bedrooms", data.get("bedrooms"))
+                loader.add_value("bathrooms", data.get("bathrooms"))
+                loader.add_value("land_size", data.get("area_size"))
+                loader.add_value("build_size", data.get("building_size"))
+                loader.add_value("location", data.get("area"))
+                if "lease" in data.get("property_status"):
+                    loader.add_value("leasehold_years", data.get("expiration"))
+                is_sold = data.get("is_sold")
+                if is_sold:
+                    price = data.get("price_raw", -1)
+                    if not price:
+                        loader.add_value("price", -1)
+                    loader.add_value("sold_at", data.get("sold_at"))
+                    loader.add_value("availability_label", "Sold")
+                else:
+                    loader.add_value("availability_label", "Available")
 
             item = loader.load_item()
 
@@ -167,6 +214,10 @@ class BaliPropertiesForSaleSpider(BaseSpider):
                 "contract_type", ""
             ):
                 item["leasehold_years"] = find_lease_years(item.get("description", ""))
+
+            # Define property type if not set
+            if not item.get("property_type"):
+                item["property_type"] = define_property_type(item.get("title", ""))
 
             yield item
 

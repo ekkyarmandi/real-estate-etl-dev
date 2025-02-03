@@ -7,9 +7,9 @@ from reid.func import (
     dimension_remover,
     find_published_date,
     get_lease_years,
+    identify_currency,
     landsize_extractor,
     recalculate_price_by_land_size,
-    extract_currency,
 )
 from models.error import Error
 from reid.database import get_db
@@ -37,27 +37,23 @@ class RajaVillaPropertySpider(BaseSpider):
             ## lambda functions
             get_first = lambda str, separator: str.split(separator)[0]
             get_last = lambda str, separator: str.split(separator)[-1]
-
             ## extractors main functions
             loader = ItemLoader(item=PropertyItem(), selector=response)
             loader.add_value("source", "Raja Villa Property")
             loader.add_value("scraped_at", self.scraped_at)
             loader.add_value("url", response.url)
             loader.add_value("html", response.text)
-
             loader.add_css(
-                "property_id", ".preoperty-overview ul li:contains(Property)::text"
+                "property_id",
+                ".preoperty-overview ul li:contains(Property)::text",
             )
             loader.add_css("bedrooms", "li:contains(Bed) ::Text")
             loader.add_css("bathrooms", "li:contains(Bath) ::Text")
             loader.add_css("location", ".address ::text")
 
             # Price and currency handling
-            price_text = response.css("div.price:contains(USD)::text").get()
-            if price_text:
-                price = get_first(price_text, "/")
-                loader.add_value("price", price)
-                loader.add_value("currency", "USD")
+            loader.add_css("price", "div.price::text")
+            loader.add_css("currency", "div.price::text", MapCompose(identify_currency))
 
             title = response.css("h1::text").get()
             if "leasehold" in title.lower():
@@ -141,6 +137,7 @@ class RajaVillaPropertySpider(BaseSpider):
 
             # Recalculate the price by land size
             if isinstance(land_size, int) and land_size > 0:
+                price_text = response.css("div.price::text").get()
                 new_price = recalculate_price_by_land_size(price_text, price, land_size)
                 if new_price:
                     item["price"] = new_price

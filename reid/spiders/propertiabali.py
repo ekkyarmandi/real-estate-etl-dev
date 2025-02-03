@@ -11,7 +11,7 @@ from reid.func import (
     find_published_date,
     are_to_sqm,
     dimension_remover,
-    extract_currency,
+    identify_currency,
 )
 
 
@@ -119,7 +119,7 @@ class PropertiaBaliSpider(BaseSpider):
             loader.add_css(
                 "currency",
                 "div.detail-wrap > ul > li:contains('Price') span::Text",
-                MapCompose(extract_currency),
+                MapCompose(identify_currency),
             )
             loader.add_css(
                 "image_url",

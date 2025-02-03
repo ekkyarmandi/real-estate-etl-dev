@@ -6,12 +6,10 @@ from reid.func import (
     find_published_date,
     get_lease_years,
     delisted_item,
-    extract_currency,
 )
 from models.error import Error
 from reid.database import get_db
 import traceback
-import re
 import scrapy
 import urllib.parse
 
@@ -65,21 +63,29 @@ class SuasaRealEstateSpider(BaseSpider):
                 ".prop-price select > option[value=usd]::attr(data-rate)"
             ).get()
             if not price:
+                delisted_item.update(
+                    {"source": "Suasa Real Estate", "url": response.url}
+                )
                 yield delisted_item
-
-            if "idr" in price.lower():
-                loader.add_value("price", price)
-                loader.add_value("currency", "IDR")
-            elif "usd" in price.lower():
-                loader.add_value("price", price)
-                loader.add_value("currency", "USD")
+            if price:
+                if "idr" in price.lower():
+                    loader.add_value("price", price)
+                    loader.add_value("currency", "IDR")
+                elif "usd" in price.lower():
+                    loader.add_value("price", price)
+                    loader.add_value("currency", "USD")
 
             # Basic info
             loader.add_css("title", "h1::text")
             loader.add_css("property_id", "a[data-ref]::attr(data-ref)")
             loader.add_css("image_url", "div.photoswipe-item img::attr(src)")
             loader.add_css(
-                "location", "h1::text", MapCompose(lambda x: x.split("|")[-1].strip())
+                "location",
+                "h1::text",
+                MapCompose(
+                    lambda x: x.split("|")[-1].strip(),
+                    lambda x: x.split(" in ")[-1].strip(),
+                ),
             )
 
             # Sizes
@@ -96,8 +102,8 @@ class SuasaRealEstateSpider(BaseSpider):
             contract_type = response.css(
                 "#main .content-table tr:contains(Term) td:nth-child(2)::text"
             ).get()
-            url = response.css("meta[property='og:url']::attr(content)").get()
-            property_type = url.split("/")[3].title()
+            # url = response.css("meta[property='og:url']::attr(content)").get()
+            property_type = response.url.split("/")[3].title()
             loader.add_value("contract_type", contract_type)
             loader.add_value("property_type", property_type)
 
@@ -122,11 +128,12 @@ class SuasaRealEstateSpider(BaseSpider):
             )
 
             # Lease years
-            loader.add_css(
-                "leasehold_years",
-                '#main .content-table tr:contains("End of Lease") td:nth-child(2)::text',
-                MapCompose(get_lease_years),
-            )
+            if "lease" in contract_type.lower():
+                loader.add_css(
+                    "leasehold_years",
+                    '#main .content-table tr:contains("End of Lease") td:nth-child(2)::text',
+                    MapCompose(get_lease_years),
+                )
 
             # Published date
             loader.add_css(
