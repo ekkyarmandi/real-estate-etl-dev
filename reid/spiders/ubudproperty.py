@@ -1,7 +1,6 @@
 import scrapy
 from urllib.parse import urljoin
 from scrapy.loader import ItemLoader
-from datetime import datetime
 from reid.items import PropertyItem
 from itemloaders.processors import MapCompose
 from reid.database import get_db

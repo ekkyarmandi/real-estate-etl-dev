@@ -377,9 +377,9 @@ def find_contract_type(value: str):
 
 
 def get_contract_type(value: str):
-    result = re.search(r"leasehold|freehold", value.lower())
-    if result:
+    if result := re.search(r"leasehold|freehold", value.lower()):
         return result.group().title()
+    return "Freehold"
 
 
 def grab_price(price):
@@ -393,16 +393,14 @@ def grab_price(price):
     return idr, usd
 
 
-def find_leasehold_years_bahasa_indonesia(text):
-    result = None
-    patterns = [
-        r"harga(.*?)\d{1,2}(.*?)(utk|untuk)(.*?)(?P<years>\d{1,2})\s*tahun",
-    ]
+def find_leasehold_years_bahasa(text) -> str | None:
+    pattern = r"harga(.*?)\d{1,2}(.*?)(utk|untuk)(.*?)(?P<years>\d{1,2})\s*tahun"
     text = re.sub(r"\n", " ", text)
-    for p in patterns:
-        result = re.search(p, text, re.IGNORECASE)
-        if result:
-            return result.group("years")
+    if result := re.search(pattern, text, re.IGNORECASE):
+        try:
+            return int(result.group("years"))
+        except:
+            return None
     return None
 
 
@@ -498,7 +496,7 @@ def find_build_size(desc: str):
     return find_size(desc, patterns, "build_size")
 
 
-def find_lease_years(description):
+def find_lease_years(description) -> int | None:
     """
     Find leasehold years in the description.
     """
@@ -923,3 +921,9 @@ def json_string_to_dict(json_str):
     except json.JSONDecodeError as e:
         print(f"Error decoding JSON: {e}")
         return None
+
+
+def cari_luas_tanah(text: str) -> Union[int, None]:
+    pattern = r"(land size|luas tanah|land area|total area).*?(?P<land_size>[0-9.,]+)\s*(m2|sqm|sq\. meter|square meter|are)"
+    if result := re.search(pattern, text, re.IGNORECASE):
+        return result.group("land_size")

@@ -1,7 +1,9 @@
 from scrapy.loader import ItemLoader
 from reid.items import PropertyItem
 from reid.spiders.base import BaseSpider
+from itemloaders.processors import MapCompose
 from reid.func import (
+    cari_luas_tanah,
     check_per_meter,
     count_lease_years,
     delisted_item,
@@ -84,11 +86,8 @@ class RayWhiteSpider(BaseSpider):
                     loader.add_value("listed_date", list_date)
 
                 # Price and currency
-                curr = jmespath.search("offers.priceCurrency", d)
-                price = jmespath.search("offers.price", d)
-                if curr == "IDR":
-                    loader.add_value("price", price)
-                    loader.add_value("currency", "IDR")
+                loader.add_value("currency", jmespath.search("offers.priceCurrency", d))
+                loader.add_value("price", jmespath.search("offers.price", d))
 
             # Basic info
             loader.add_css("title", "h1::Text")
@@ -109,6 +108,14 @@ class RayWhiteSpider(BaseSpider):
             loader.add_value("bathrooms", table.get("Bathroom"))
             loader.add_value("land_size", table.get("Land Size"))
             loader.add_value("build_size", table.get("Building Size"))
+
+            land_size = loader.get_output_value("land_size")
+            if not land_size:
+                loader.add_value(
+                    "land_size",
+                    "h2 + p ::Text",
+                    MapCompose(cari_luas_tanah),
+                )
 
             # Availability
             loader.add_value("availability_label", "Available")
@@ -152,12 +159,6 @@ class RayWhiteSpider(BaseSpider):
             # Additional processing
             item = loader.load_item()
 
-            # Find land size in description
-            if not item.get("land_size") and desc:
-                pattern = r"(land size|luas tanah|land area|total area).*?(?P<land_size>[0-9.,]+)\s*(m2|sqm|sq\. meter|square meter|are)"
-                if result := re.search(pattern, desc, re.IGNORECASE):
-                    item["land_size"] = result.group("land_size")
-
             # Calculate price per meter
             price_idr = response.css(
                 "p.h3 + div > label:contains(IDR)::attr(for)"
@@ -168,11 +169,17 @@ class RayWhiteSpider(BaseSpider):
                 price = item.get("price", 0)
                 if land_size > 0 and has_permeter:
                     item["price"] = price * land_size
+                    item["currency"] = "IDR"
 
             # Bedrooms validation
             bedrooms = item.get("bedrooms", 0)
-            if not bedrooms and property_type != "Villa":
-                delisted_item["excluded_by"] = "no_bedrooms"
+            if not bedrooms and property_type == "Villa":
+                delisted_item.update(
+                    {
+                        "url": item.get("url"),
+                        "source": "Ray White Indonesia",
+                    }
+                )
                 yield delisted_item
             else:
                 yield item

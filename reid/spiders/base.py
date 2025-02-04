@@ -19,13 +19,14 @@ class BaseSpider(scrapy.Spider):
                 db = next(get_db())
                 url = failure.request.url
                 listing = db.query(Listing).filter(Listing.url == url).first()
-                listing.is_available = False
-                listing.availability = "Delisted"
-                listing.sold_at = first_month()
-                db.commit()
-                # clear already recorded error
-                db.query(Error).filter(Error.url == url).delete()
-                db.commit()
+                if listing:
+                    listing.is_available = False
+                    listing.availability = "Delisted"
+                    listing.sold_at = first_month()
+                    db.commit()
+                    # clear already recorded error
+                    db.query(Error).filter(Error.url == url).delete()
+                    db.commit()
                 return
             else:
                 error = Error(

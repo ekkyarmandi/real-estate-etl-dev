@@ -1,6 +1,11 @@
 import re
 from datetime import datetime
-from reid.func import to_number
+from reid.func import (
+    count_lease_years,
+    find_lease_years,
+    find_leasehold_years_bahasa,
+    to_number,
+)
 
 
 def after_colon(text):
@@ -14,7 +19,7 @@ def after_colon(text):
         return ""
 
 
-def find_years(value):
+def find_years(value) -> int | None:
     ## lambda functions
     is_not_empty_string = lambda text: str(text).strip() != ""
     is_start_with_two = lambda d: (
@@ -42,3 +47,21 @@ def find_years(value):
 
     elif type(value) == int:
         return value
+
+
+def leasehold_years_finders(text: str) -> int | None:
+    """
+    Find the leasehold years from the text using multiple strategies
+    """
+    if not text:
+        return None
+
+    # Try all the different methods in sequence
+    years = (
+        find_lease_years(text)
+        or find_years(text)
+        or count_lease_years(text)
+        or find_leasehold_years_bahasa(text)
+    )
+
+    return years

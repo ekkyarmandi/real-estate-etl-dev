@@ -35,8 +35,8 @@ class BaliRealtySpider(BaseSpider):
 
     def _get_response(self, url):
         headers = {
-            "Cookie": config("BALIREALTY_COOKIES"),
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+            "Cookie": "cf_clearance=" + config("BALIREALTY_COOKIES"),
+            "User-Agent": config("USER_AGENT"),
         }
         response = requests.get(url, headers=headers)
         return scrapy.http.TextResponse(
@@ -91,7 +91,7 @@ class BaliRealtySpider(BaseSpider):
                     loader.add_value("price", price_usd)
                     loader.add_value("currency", "USD")
             else:
-                delisted_item.update({"source": "Bali Realty"})
+                delisted_item.update({"source": "Bali Realty", "url": response_url})
                 yield delisted_item
 
             # Published date
@@ -99,7 +99,7 @@ class BaliRealtySpider(BaseSpider):
             result = re.search(r'"datePublished":"(?P<date>[T0-9\-\:\+]+)"', script)
             if result:
                 date = result.group("date")
-                list_date = datetime.fromisoformat(date).strftime("%m/%d/%y")
+                list_date = datetime.fromisoformat(date).strftime("%m/%d/%Y")
                 loader.add_value("listed_date", list_date)
 
             # Property details
@@ -128,8 +128,7 @@ class BaliRealtySpider(BaseSpider):
             loader.add_value("contract_type", contract_type)
 
             # Property type
-            property_type = details.get("Type")
-            loader.add_value("property_type", property_type)
+            loader.add_value("property_type", details.get("Type"))
 
             # Images
             loader.add_css(

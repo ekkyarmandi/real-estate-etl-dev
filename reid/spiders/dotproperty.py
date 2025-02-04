@@ -8,13 +8,14 @@ from models.listing import Listing
 from reid.customs.dotproperty import (
     after_colon,
     find_years,
+    leasehold_years_finders,
 )
 from reid.func import (
     find_lease_years,
     find_land_size,
     find_build_size,
     get_contract_type,
-    find_leasehold_years_bahasa_indonesia,
+    find_leasehold_years_bahasa,
     count_lease_years,
 )
 from urllib.parse import urlparse
@@ -77,7 +78,7 @@ class DotPropertySpider(BaseSpider):
                 }
             )
             db.commit()
-            return {
+            yield {
                 "source": "Dot Property",
                 "scraped_at": self.scraped_at,
                 "url": origin_url,
@@ -85,10 +86,10 @@ class DotPropertySpider(BaseSpider):
             }
         try:
             loader = ItemLoader(item=PropertyItem(), selector=response)
-            loader.add_value("url", response.url)
-            loader.add_value("html", response.text)
             loader.add_value("source", "Dot Property")
             loader.add_value("scraped_at", self.scraped_at)
+            loader.add_value("url", response.url)
+            loader.add_value("html", response.text)
             # script application/ld+json
             script = response.css("script[type='application/ld+json']::text").get()
             data = json.loads(script)
@@ -97,11 +98,6 @@ class DotPropertySpider(BaseSpider):
             loader.add_css("location", "div.location::text")
             loader.add_css(
                 "property_id", "p.internal-ref::text", MapCompose(after_colon)
-            )
-            loader.add_css(
-                "contract_type",
-                "h1::text,div.text-description ::text",
-                MapCompose(get_contract_type),
             )
             loader.add_css("property_type", "#breadcrumb a::attr(title)")
             loader.add_css("bedrooms", "ul.key-featured li:contains(Bed) span::text")
@@ -118,22 +114,26 @@ class DotPropertySpider(BaseSpider):
             loader.add_css(
                 "leasehold_years",
                 "div.text-description ::text",
-                MapCompose(find_lease_years),
+                MapCompose(leasehold_years_finders),
             )
+
+            # define the contract type
+            leasehold_years = loader.get_output_value("leasehold_years")
+            if leasehold_years:
+                loader.add_value("contract_type", "Leasehold")
+            elif "for-sale" in response.url:
+                loader.add_value("contract_type", "Freehold")
+            else:
+                loader.add_css(
+                    "contract_type",
+                    "h1::text, div.text-description ::text",
+                    MapCompose(get_contract_type),
+                )
 
             item = loader.load_item()
 
-            # find the contract and property type on the url
-            url = response.css("link[rel=canonical]::attr(href)").get()
-            pu = urlparse(url)
-            url_path = pu.path
-
             # lease years
             desc = item.get("description", "")
-            title = item.get("title")
-            contract_type = item.get("contract_type")
-
-            # find bedrooms in the description
             bedrooms_pattern = [
                 r"(?P<bedrooms>\d)\s*bedrooms",
                 r"bedrooms\s*(?P<bedrooms>\d)",
@@ -146,14 +146,6 @@ class DotPropertySpider(BaseSpider):
                         item["bedrooms"] = int(result.group("bedrooms"))
                         break
 
-            if contract_type == "Leasehold" and not item.get("leasehold_years"):
-                item["leasehold_years"] = find_years(desc)
-
-            if item.get("leasehold_years"):
-                item["contract_type"] = "Leasehold"
-            if not contract_type and "for-sale" in url_path:
-                contract_type = "Freehold"
-
             # find missing land size in the description
             land_size = item.get("land_size")
             if not land_size:
@@ -163,10 +155,6 @@ class DotPropertySpider(BaseSpider):
             build_size = item.get("build_size")
             if not build_size:
                 item["build_size"] = find_build_size(desc)
-
-            # revaluate the leasehold years
-            if "free" in contract_type.lower():
-                item["leasehold_years"] = None
 
             # find missing land size in the description
             if not item.get("land_size"):
@@ -183,18 +171,8 @@ class DotPropertySpider(BaseSpider):
                     item["build_size"] = find_build_size(desc)
                 except AttributeError:
                     pass
+            yield item
 
-            # find missing leasehold years in the description
-            contract_type = item.get("contract_type", "").split(" ")[0]
-            leasehold_years = item.get("leasehold_years", 0)
-            if not leasehold_years and "Leasehold" in contract_type:
-                item["leasehold_years"] = count_lease_years(desc)
-                if not item["leasehold_years"]:
-                    item["leasehold_years"] = find_leasehold_years_bahasa_indonesia(
-                        desc
-                    )
-
-            return item
         except Exception as err:
             error = Error(
                 url=response.url,
