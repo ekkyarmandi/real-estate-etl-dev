@@ -145,3 +145,64 @@ class Listing(Base):
 
     def __repr__(self):
         return f"<Listing UUID='{self.id}'>"
+
+    def to_dict(self):
+        # Helper function to convert datetime to timestamp (milliseconds)
+        def to_timestamp(dt):
+            if dt is None:
+                return None
+            return int(dt.timestamp() * 1000)
+
+        # Handle price fields based on currency
+        price_idr = None
+        price_usd = None
+        if self.currency == "USD":
+            price_usd = self.price
+        elif self.currency == "IDR":
+            price_idr = self.price
+
+        return {
+            "FX": None,  # Exchange rate not stored in model
+            "Source A": self.source,
+            "Source B": None,
+            "ID": self.property_id,
+            "REID ID": self.reid_id,
+            "Duplicate": None,  # Set to None as requested
+            "Region": self.region,
+            "Location": self.location,
+            "Contract Type": self.contract_type,
+            "Property Type": self.property_type,
+            "Years": self.leasehold_years,
+            "Bedrooms": self.bedrooms,
+            "Bathrooms": self.bathrooms,
+            "Land Size (SQM)": self.land_size,
+            "Build Size (SQM)": self.build_size,
+            "FSR": None,  # Not stored in model
+            "Price": price_idr,  # Only set if currency is IDR
+            "Price ($)": price_usd,  # Only set if currency is USD
+            "Price/SQM ($)": None,  # Calculated field not stored in model
+            "Price/Year ($)": None,  # Calculated field not stored in model
+            "Availability": self.availability,
+            "Sold Date": to_timestamp(self.sold_at),
+            "Scrape Date": to_timestamp(self.scraped_at),
+            "List Date": self.listed_date,
+            "Days listed": None,  # Calculated field not stored in model
+            "Property Link": self.url,
+            "Image": self.image_url,
+            "Title": self.title,
+            "Description": self.description,
+            "Off plan": None,  # Not directly mapped
+            "Investment": None,  # Not stored in model
+            "Modern": None,  # Not stored in model
+            "Brand New": None,  # Not stored in model
+            "Family": None,  # Not stored in model
+            "Spacious": None,  # Not stored in model
+            "Enclosed Living": None,  # Not stored in model
+            "Open Living": None,  # Not stored in model
+            "Enclosed and Living": None,  # Not stored in model
+            "Off-plan": "Yes" if self.is_off_plan else "No",
+            "Pool": None,  # Not stored in model
+            "Garden": None,  # Not stored in model
+            "Single story": None,  # Not stored in model
+            "Second story": None,  # Not stored in model
+        }

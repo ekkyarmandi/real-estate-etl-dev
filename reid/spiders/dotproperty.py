@@ -7,18 +7,13 @@ from itemloaders.processors import MapCompose
 from models.listing import Listing
 from reid.customs.dotproperty import (
     after_colon,
-    find_years,
     leasehold_years_finders,
 )
 from reid.func import (
-    find_lease_years,
     find_land_size,
     find_build_size,
     get_contract_type,
-    find_leasehold_years_bahasa,
-    count_lease_years,
 )
-from urllib.parse import urlparse
 from reid.spiders.base import BaseSpider
 from reid.items import PropertyItem
 from reid.database import get_db
