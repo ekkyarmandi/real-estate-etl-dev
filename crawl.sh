@@ -1,3 +1,3 @@
 #!/bin/bash
-cd /reid
+cd ./reid
 scrapy crawl ubudproperty
