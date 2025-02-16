@@ -28,7 +28,7 @@ class UbudPropertySpider(BaseSpider):
     allowed_domains = ["ubudproperty.com"]
     start_urls = [
         "https://ubudproperty.com/listing-villaforsale",
-        "https://ubudproperty.com/listing-landforsale",
+        # "https://ubudproperty.com/listing-landforsale",
     ]
 
     def parse(self, response):
@@ -64,7 +64,7 @@ class UbudPropertySpider(BaseSpider):
                 footprint += "=" + str(i)
                 if footprint not in self.visited_urls:
                     self.visited_urls.append(footprint)
-                    yield scrapy.Request(next_page, callback=self.parse)
+                    # yield scrapy.Request(next_page, callback=self.parse)
 
     def parse_detail(self, response):
         try:
