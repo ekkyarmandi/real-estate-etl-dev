@@ -127,6 +127,10 @@ class KibarerSpider(BaseSpider):
 
                 item = loader.load_item()
 
+                # set the default property type if missings
+                if item.get("property_type") is None:
+                    item["property_type"] = "Villa"
+
                 # refind the leasehold years in the description
                 leasehold_years = item.get("leasehold_years", 0)
                 contract_type = item.get("contract_type", "").lower()

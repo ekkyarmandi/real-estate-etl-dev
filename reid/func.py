@@ -884,6 +884,8 @@ def find_bedrooms_in_description(text):
 def first_month() -> datetime:
     date = datetime.now()
     date = date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month = date.month - 1
+    date = date.replace(month=month)
     return date.strftime("%Y-%m-%d")
 
 

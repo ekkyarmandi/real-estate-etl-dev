@@ -43,11 +43,8 @@ class Listing(Base):
     def reid_id_generator(self, db):
         code = REID_CODE[self.source]
         # TEMPORARY FIX
-        today = datetime.now().replace(
-            day=1,
-            month=1,
-            year=2025,
-        )
+        today = datetime.now().replace(day=1, year=2025)
+        today = today.replace(month=today.month - 1)
         yr_mo = today.strftime(f"REID_%y_%m_{code}")
         q = text(
             "SELECT reid_id FROM listing WHERE reid_id LIKE :yr_mo ORDER BY reid_id DESC LIMIT 1;"

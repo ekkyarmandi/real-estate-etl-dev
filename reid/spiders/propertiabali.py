@@ -12,6 +12,7 @@ from reid.func import (
     are_to_sqm,
     dimension_remover,
     identify_currency,
+    define_property_type,
 )
 
 
@@ -90,6 +91,11 @@ class PropertiaBaliSpider(BaseSpider):
             loader.add_css(
                 "contract_type",
                 "div.detail-wrap > ul > li:contains('Property Type') span::Text",
+            )
+            loader.add_css(
+                "property_type",
+                "div.detail-wrap > ul > li:contains('Property Type') span::Text",
+                MapCompose(define_property_type),
             )
             loader.add_css(
                 "bedrooms",

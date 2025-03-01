@@ -6,6 +6,8 @@ from reid.spiders.base import BaseSpider
 from reid.items import PropertyItem
 import re
 
+from reid.customs.exotiqproperty import lease_or_free_hold
+
 
 class ExotiqPropertySpider(BaseSpider):
     name = "exotiqproperty"
@@ -25,7 +27,11 @@ class ExotiqPropertySpider(BaseSpider):
         loader.add_value("url", response.url)
         loader.add_value("html", response.text)
 
-        loader.add_css("contract_type", "div.ownership-details::text")
+        loader.add_css(
+            "contract_type",
+            "#listing-primary-infos div:contains(Ownership) + div::text",
+            MapCompose(lease_or_free_hold),
+        )
         loader.add_css(
             "property_type", 'div.info_title:contains("Type of property") + div::text'
         )
@@ -38,10 +44,7 @@ class ExotiqPropertySpider(BaseSpider):
         contract_type = loader.get_output_value("contract_type")
         if contract_type or ownership:
             if "lease" in contract_type.lower() or "lease" in ownership.lower():
-                result = re.search(r"\d{2}", contract_type)
-                if result:
-                    loader.add_value("leasehold_years", result.group(0))
-                    loader.add_value("contract_type", "Leasehold")
+                loader.add_css("leasehold_years", ".ownership-details:contains(years)")
 
         # assign data into item loader
         loader.add_value("availability_label", "Available")
