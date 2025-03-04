@@ -14,3 +14,25 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def get_local_db():
+    engine = create_engine("postgresql://postgres:postgres@localhost:5432/reid-db")
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_checker_db():
+    engine = create_engine(
+        "postgresql://postgres:QelXrdrXWKwzVdkPRoHiDAAMHoGdPDkb@autorack.proxy.rlwy.net:33614/railway"
+    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

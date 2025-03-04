@@ -8,6 +8,7 @@ from reid.func import (
     define_property_type,
     find_bedrooms,
     find_location_in_title,
+    identify_currency,
 )
 from models.error import Error
 from reid.database import get_db
@@ -165,7 +166,11 @@ class BaliExceptionSpider(BaseSpider):
             )
             loader.add_css("location", "ol.breadcrumb > li a[itemid*=area] span::Text")
             loader.add_css("price", "p.converted-price::Text")
-            loader.add_css("currency", "p.converted-price::Text")
+            loader.add_css(
+                "currency",
+                "p.converted-price::Text",
+                MapCompose(identify_currency),
+            )
             loader.add_css("image_url", "figure img::attr(src)")
             loader.add_css("description", "div[class*=post-content] ::Text")
             loader.add_value("availability_label", "Available")
