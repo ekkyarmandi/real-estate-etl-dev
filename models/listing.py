@@ -158,6 +158,12 @@ class Listing(Base):
         elif self.currency == "IDR":
             price_idr = self.price
 
+        if self.availability == "Delisted":
+            self.availability = "Sold"
+            site_status = "Delisted"
+        else:
+            site_status = None
+
         return {
             "FX": None,  # Exchange rate not stored in model
             "Source A": self.source,
@@ -180,6 +186,7 @@ class Listing(Base):
             "Price/SQM ($)": None,  # Calculated field not stored in model
             "Price/Year ($)": None,  # Calculated field not stored in model
             "Availability": self.availability,
+            "Site Status": site_status,
             "Sold Date": to_timestamp(self.sold_at),
             "Scrape Date": to_timestamp(self.scraped_at),
             "List Date": self.listed_date,
