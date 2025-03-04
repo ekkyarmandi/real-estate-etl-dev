@@ -8,6 +8,7 @@ from itemloaders.processors import MapCompose
 from models.listing import Listing
 from reid.items import PropertyItem
 from reid.func import (
+    find_contract_type,
     find_lease_years,
     are_to_sqm,
     find_idr,
@@ -15,6 +16,7 @@ from reid.func import (
     dimension_remover,
     find_property_type,
     delisted_item,
+    get_lease_years,
 )
 
 
@@ -24,34 +26,47 @@ class KibarerSpider(BaseSpider):
     start_urls = ["https://www.villabalisale.com/search/villas-for-sale/"]
 
     def parse(self, response):
-        urls = response.css(
-            "#box div.property-item a::attr(href), div.properties-lists div.property-info > a::attr(href)"
-        ).getall()
+        # urls = response.css(
+        #     "#box div.property-item a::attr(href), div.properties-lists div.property-info > a::attr(href)"
+        # ).getall()
+        db = next(get_db())
+        urls = (
+            db.query(Listing.url)
+            .filter(
+                Listing.source == "Kibarer",
+                Listing.reid_id.like("REID_25_02%"),
+                Listing.contract_type == "Leasehold",
+                Listing.leasehold_years == None,
+            )
+            .all()
+        )
+        urls = [url[0] for url in urls]
         for url in urls:
-            if url not in self.start_urls and url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(
-                    url,
-                    callback=self.parse_detail,
-                    errback=self.handle_error,
-                    meta={"redirect_from": url},
-                )
-        # Iterate the existing urls
-        for url in self.existing_urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(
-                    url,
-                    callback=self.parse_detail,
-                    errback=self.handle_error,
-                    meta={"redirect_from": url},
-                )
-        # Do paginating
-        next_url = response.css(
-            "div#pagination ul li a[aria-label=Next]::attr(href)"
-        ).get()
-        if next_url and "http" in next_url:
-            yield response.follow(next_url, callback=self.parse)
+            # if url not in self.start_urls and url not in self.visited_urls:
+            #     self.visited_urls.append(url)
+            yield response.follow(
+                url,
+                callback=self.parse_detail,
+                errback=self.handle_error,
+                meta={"redirect_from": url},
+            )
+
+        # # Iterate the existing urls
+        # for url in self.existing_urls:
+        #     if url not in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield response.follow(
+        #             url,
+        #             callback=self.parse_detail,
+        #             errback=self.handle_error,
+        #             meta={"redirect_from": url},
+        #         )
+        # # Do paginating
+        # next_url = response.css(
+        #     "div#pagination ul li a[aria-label=Next]::attr(href)"
+        # ).get()
+        # if next_url and "http" in next_url:
+        #     yield response.follow(next_url, callback=self.parse)
 
     def parse_detail(self, response):
         redirected_url = response.meta.get("redirect_from")
@@ -96,8 +111,16 @@ class KibarerSpider(BaseSpider):
                 loader.add_css("location", "div:has(dd):contains(Location) dt::Text")
                 loader.add_value(
                     "contract_type",
-                    "Leasehold" if "lease" in contract_type.lower() else "Freehold",
+                    contract_type,
+                    MapCompose(find_contract_type),
                 )
+                contract_type = loader.get_output_value("contract_type")
+                if contract_type == "Leasehold":
+                    loader.add_css(
+                        "leasehold_years",
+                        "div.property-badge:first-child ::Text",
+                        MapCompose(get_lease_years),
+                    )
                 loader.add_css(
                     "property_type",
                     "h1#property-name::Text",

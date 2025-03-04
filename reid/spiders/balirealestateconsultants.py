@@ -1,6 +1,7 @@
 import traceback
 import re
 from models.error import Error
+from models.listing import Listing
 from reid.database import get_db
 from itemloaders.processors import MapCompose
 from reid.spiders.base import BaseSpider
@@ -11,6 +12,7 @@ from reid.func import (
     define_property_type,
     dimension_remover,
     count_lease_years,
+    find_property_type,
     identify_currency,
     to_number,
     get_first,
@@ -32,15 +34,27 @@ class BaliRealEstateConsultantsSpider(BaseSpider):
 
     def parse(self, response):
         # collect property items
-        items = response.css("#module_properties > .card")
-        for item in items:
-            url = item.css("h2 a::attr(href)").get()
+        # items = response.css("#module_properties > .card")
+        db = next(get_db())
+        urls = (
+            db.query(Listing.url)
+            .filter(
+                Listing.source == "Bali Real Estate Consultants",
+                Listing.property_type == "Land",
+                Listing.bedrooms > 0,
+                Listing.reid_id.like("REID_25_02%"),
+            )
+            .all()
+        )
+        urls = [url[0] for url in urls]
+        for url in urls:
+            # url = item.css("h2 a::attr(href)").get()
             yield response.follow(url, callback=self.parse_detail)
 
         # go to the next page
-        next_url = response.css("ul.pagination li a[aria-label=Next]::attr(href)").get()
-        if next_url:
-            yield response.follow(next_url, callback=self.parse)
+        # next_url = response.css("ul.pagination li a[aria-label=Next]::attr(href)").get()
+        # if next_url:
+        #     yield response.follow(next_url, callback=self.parse)
 
     def parse_detail(self, response):
         try:
@@ -132,7 +146,7 @@ class BaliRealEstateConsultantsSpider(BaseSpider):
             loader.add_css(
                 "property_type",
                 "h1::text",
-                MapCompose(define_property_type),
+                MapCompose(find_property_type),
             )
 
             item = loader.load_item()

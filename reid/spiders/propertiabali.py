@@ -1,12 +1,14 @@
 import traceback
 import re
 from models.error import Error
+from models.listing import Listing
 from reid.database import get_db
 from itemloaders.processors import MapCompose
 from reid.spiders.base import BaseSpider
 from scrapy.loader import ItemLoader
 from reid.items import PropertyItem
 from reid.func import (
+    find_contract_type,
     find_lease_years,
     find_published_date,
     are_to_sqm,
@@ -23,36 +25,48 @@ class PropertiaBaliSpider(BaseSpider):
 
     def parse(self, response):
         # get properties urls
-        urls = response.css("#module_properties a[target]::attr(href)").getall()
-        urls = list(dict.fromkeys(urls))
+        # urls = response.css("#module_properties a[target]::attr(href)").getall()
+        # urls = list(dict.fromkeys(urls))
+
+        db = next(get_db())
+        urls = (
+            db.query(Listing.url)
+            .filter(
+                Listing.source == "Propertia",
+                Listing.contract_type.notin_(["Leasehold", "Freehold", "Rental"]),
+                Listing.reid_id.like("REID_25_02%"),
+            )
+            .all()
+        )
+        urls = [url[0] for url in urls]
 
         # loop and parse it to parse_detail
         for url in urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(
-                    url=url,
-                    callback=self.parse_detail,
-                    errback=self.handle_error,
-                )
+            # if url not in self.visited_urls:
+            #     self.visited_urls.append(url)
+            yield response.follow(
+                url=url,
+                callback=self.parse_detail,
+                errback=self.handle_error,
+            )
 
         # loop and parse it to parse_detail
-        for url in self.existing_urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(
-                    url=url,
-                    callback=self.parse_detail,
-                    errback=self.handle_error,
-                )
+        # for url in self.existing_urls:
+        #     if url not in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield response.follow(
+        #             url=url,
+        #             callback=self.parse_detail,
+        #             errback=self.handle_error,
+        #         )
 
         # get the next page url
-        next_url = response.css(
-            "ul.pagination li > a[aria-label=Next]::attr(href)"
-        ).get()
-        next_url = response.urljoin(next_url)
-        if next_url and "http" in next_url:
-            yield response.follow(url=next_url, callback=self.parse)
+        # next_url = response.css(
+        #     "ul.pagination li > a[aria-label=Next]::attr(href)"
+        # ).get()
+        # next_url = response.urljoin(next_url)
+        # if next_url and "http" in next_url:
+        #     yield response.follow(url=next_url, callback=self.parse)
 
     def parse_detail(self, response):
         try:
@@ -91,6 +105,7 @@ class PropertiaBaliSpider(BaseSpider):
             loader.add_css(
                 "contract_type",
                 "div.detail-wrap > ul > li:contains('Property Type') span::Text",
+                MapCompose(find_contract_type),
             )
             loader.add_css(
                 "property_type",
