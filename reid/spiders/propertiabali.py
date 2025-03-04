@@ -7,6 +7,7 @@ from reid.spiders.base import BaseSpider
 from scrapy.loader import ItemLoader
 from reid.items import PropertyItem
 from reid.func import (
+    find_contract_type,
     find_lease_years,
     find_published_date,
     are_to_sqm,
@@ -91,6 +92,7 @@ class PropertiaBaliSpider(BaseSpider):
             loader.add_css(
                 "contract_type",
                 "div.detail-wrap > ul > li:contains('Property Type') span::Text",
+                MapCompose(find_contract_type),
             )
             loader.add_css(
                 "property_type",

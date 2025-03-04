@@ -15,6 +15,8 @@ from reid.func import (
     dimension_remover,
     find_property_type,
     delisted_item,
+    find_contract_type,
+    get_lease_years,
 )
 
 
@@ -96,8 +98,16 @@ class KibarerSpider(BaseSpider):
                 loader.add_css("location", "div:has(dd):contains(Location) dt::Text")
                 loader.add_value(
                     "contract_type",
-                    "Leasehold" if "lease" in contract_type.lower() else "Freehold",
+                    contract_type,
+                    MapCompose(find_contract_type),
                 )
+                contract_type = loader.get_output_value("contract_type")
+                if contract_type == "Leasehold":
+                    loader.add_css(
+                        "leasehold_years",
+                        "div.property-badge:first-child ::Text",
+                        MapCompose(get_lease_years),
+                    )
                 loader.add_css(
                     "property_type",
                     "h1#property-name::Text",

@@ -8,9 +8,9 @@ from scrapy.loader import ItemLoader
 from reid.items import PropertyItem
 from datetime import datetime
 from reid.func import (
-    define_property_type,
     dimension_remover,
     count_lease_years,
+    find_property_type,
     identify_currency,
     to_number,
     get_first,
@@ -18,8 +18,6 @@ from reid.func import (
     find_bedrooms,
     find_build_size,
     find_land_size,
-    find_idr,
-    find_usd,
 )
 
 
@@ -132,7 +130,7 @@ class BaliRealEstateConsultantsSpider(BaseSpider):
             loader.add_css(
                 "property_type",
                 "h1::text",
-                MapCompose(define_property_type),
+                MapCompose(find_property_type),
             )
 
             item = loader.load_item()
