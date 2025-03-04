@@ -69,7 +69,7 @@ DOWNLOADER_MIDDLEWARES = {
 # PROXY_LIST = "new-proxy.txt"
 
 PROXY_MODE = 2
-CUSTOM_PROXY = config("PROXYSCRAPE_CREDENTIALS")
+CUSTOM_PROXY = config("PROXY_URL")
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
