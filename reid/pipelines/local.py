@@ -11,6 +11,8 @@ class CheckMissingFieldsPipeline:
             "contract_type",
             "property_type",
             "leasehold_years",
+            "longitude",
+            "latitude",
             "bedrooms",
             "bathrooms",
             "land_size",

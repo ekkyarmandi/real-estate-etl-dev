@@ -929,3 +929,14 @@ def cari_luas_tanah(text: str) -> Union[int, None]:
     pattern = r"(land size|luas tanah|land area|total area).*?(?P<land_size>[0-9.,]+)\s*(m2|sqm|sq\. meter|square meter|are)"
     if result := re.search(pattern, text, re.IGNORECASE):
         return result.group("land_size")
+
+
+def join_strings(values: list[str]) -> str:
+    values = [f"'{value}'" for value in values]
+    return ", ".join(values)
+
+
+def extract(pattern: str, text: str) -> str:
+    if result := re.search(pattern, text):
+        return result.group(1)
+    return None

@@ -10,6 +10,7 @@ from datetime import datetime
 from reid.func import (
     dimension_remover,
     count_lease_years,
+    extract,
     find_property_type,
     identify_currency,
     to_number,
@@ -131,6 +132,16 @@ class BaliRealEstateConsultantsSpider(BaseSpider):
                 "property_type",
                 "h1::text",
                 MapCompose(find_property_type),
+            )
+            loader.add_css(
+                "longitude",
+                "#houzez-single-property-map-js-extra::text",
+                MapCompose(lambda x: extract(r'"lng"\s*:\s*"(-?[\d.]+)"', x)),
+            )
+            loader.add_css(
+                "latitude",
+                "#houzez-single-property-map-js-extra::text",
+                MapCompose(lambda x: extract(r'"lat"\s*:\s*"(-?[\d.]+)"', x)),
             )
 
             item = loader.load_item()

@@ -5,6 +5,7 @@ from itemloaders.processors import MapCompose
 from reid.spiders.base import BaseSpider
 from reid.func import (
     dimension_remover,
+    extract,
     find_lease_years,
     define_property_type,
     json_string_to_dict,
@@ -93,6 +94,17 @@ class BaliPropertiesForSaleSpider(BaseSpider):
             loader.add_value("scraped_at", self.scraped_at)
             loader.add_value("url", response.url)
             loader.add_value("html", response.text)
+
+            loader.add_css(
+                "longitude",
+                "#houzez-single-property-map-js-extra::text",
+                MapCompose(lambda x: extract(r'"lng"\s*:\s*"(-?[\d.]+)"', x)),
+            )
+            loader.add_css(
+                "latitude",
+                "#houzez-single-property-map-js-extra::text",
+                MapCompose(lambda x: extract(r'"lat"\s*:\s*"(-?[\d.]+)"', x)),
+            )
 
             json_data = response.meta.get("json_data", {})
             if json_data:

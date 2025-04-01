@@ -8,6 +8,7 @@ import traceback
 from reid.spiders.base import BaseSpider
 from reid.func import (
     dimension_remover,
+    extract,
     find_hold_state,
     find_idr,
     find_lease_years,
@@ -131,6 +132,16 @@ class UnrealBaliSpider(BaseSpider):
             loader.add_css(
                 "description",
                 "#property-description-wrap div.block-content-wrap ::text",
+            )
+            loader.add_css(
+                "longitude",
+                "#houzez-single-property-map-js-extra::text",
+                MapCompose(lambda x: extract(r'"lng"\s*:\s*"(-?[\d.]+)"', x)),
+            )
+            loader.add_css(
+                "latitude",
+                "#houzez-single-property-map-js-extra::text",
+                MapCompose(lambda x: extract(r'"lat"\s*:\s*"(-?[\d.]+)"', x)),
             )
             item = loader.load_item()
 

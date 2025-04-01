@@ -7,6 +7,7 @@ from reid.spiders.base import BaseSpider
 from scrapy.loader import ItemLoader
 from reid.items import PropertyItem
 from reid.func import (
+    extract,
     find_contract_type,
     find_lease_years,
     find_published_date,
@@ -138,6 +139,16 @@ class PropertiaBaliSpider(BaseSpider):
             loader.add_css(
                 "description",
                 "#property-description-wrap div.block-content-wrap p ::Text,#property-description-container::Text",
+            )
+            loader.add_css(
+                "longitude",
+                "script#houzez-single-property-map-js-extra::text",
+                MapCompose(lambda x: extract(r'"lng"\s*:\s*"(-?[\d.]+)"', x)),
+            )
+            loader.add_css(
+                "latitude",
+                "script#houzez-single-property-map-js-extra::text",
+                MapCompose(lambda x: extract(r'"lat"\s*:\s*"(-?[\d.]+)"', x)),
             )
 
             item = loader.load_item()

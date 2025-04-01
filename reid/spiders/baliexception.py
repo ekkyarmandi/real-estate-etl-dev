@@ -6,6 +6,7 @@ import re
 from reid.spiders.base import BaseSpider
 from reid.func import (
     define_property_type,
+    extract,
     find_bedrooms,
     find_location_in_title,
     identify_currency,
@@ -211,7 +212,19 @@ class BaliExceptionSpider(BaseSpider):
                 loader.add_value("bedrooms", value)
                 loader.add_value("bathrooms", value)
 
-            yield loader.load_item()
+            # response.css("script:contains(lng)::text").re_first(r"lng\s*=\s*(-?[\d.]+)")
+            loader.add_css(
+                "longitude",
+                "script:contains(lng)::text",
+                MapCompose(lambda x: extract(r"lng\s*=\s*(-?[\d.]+)", x)),
+            )
+            loader.add_css(
+                "latitude",
+                "script:contains(lat)::text",
+                MapCompose(lambda x: extract(r"lat\s*=\s*(-?[\d.]+)", x)),
+            )
+            item = loader.load_item()
+            yield item
 
         except Exception as err:
             error = Error(

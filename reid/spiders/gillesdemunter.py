@@ -5,6 +5,7 @@ from itemloaders.processors import MapCompose
 from reid.func import (
     define_property_type,
     delisted_item,
+    extract,
 )
 
 
@@ -79,6 +80,18 @@ class GillesdemunterSpider(BaseSpider):
         loader.add_value("currency", "USD")
         loader.add_value("availability_label", "Available")
         loader.add_css("description", "div[class*=col] p.font3.f12::text")
+
+        # response.css("script:contains(lng)::text").re_first(r'lng\s*:\s*(-?[\d.]+)')
+        loader.add_css(
+            "longitude",
+            "script:contains(lng)::text",
+            MapCompose(lambda x: extract(r"lng\s*:\s*(-?[\d.]+)", x)),
+        )
+        loader.add_css(
+            "latitude",
+            "script:contains(lat)::text",
+            MapCompose(lambda x: extract(r"lat\s*:\s*(-?[\d.]+)", x)),
+        )
 
         item = loader.load_item()
 

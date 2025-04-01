@@ -2,6 +2,7 @@ from itemloaders import ItemLoader
 from itemloaders.processors import MapCompose
 from reid.func import (
     define_property_type,
+    extract,
     find_lease_years,
     get_uploaded_date,
     grab_first,
@@ -108,6 +109,16 @@ class SvahaPropertySpider(BaseSpider):
                     "leasehold_years",
                     "div.product-details li:contains(Leasehold) span[class*=value]::text",
                 )
+            loader.add_css(
+                "longitude",
+                "#rtcl-map-js-extra",
+                MapCompose(lambda x: extract(r'"lng"\s*:\s*"(-?[\d.]+)"', x)),
+            )
+            loader.add_css(
+                "latitude",
+                "#rtcl-map-js-extra",
+                MapCompose(lambda x: extract(r'"lat"\s*:\s*"(-?[\d.]+)"', x)),
+            )
             item = loader.load_item()
             # refind the leasehold years
             years = item.get("leasehold_years")

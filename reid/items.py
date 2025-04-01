@@ -78,3 +78,10 @@ class PropertyItem(scrapy.Item):
     is_off_plan = scrapy.Field(
         input_processor=MapCompose(str.strip), output_processor=TakeFirst()
     )
+    ## New fields
+    longitude = scrapy.Field(
+        input_processor=MapCompose(float), output_processor=TakeFirst()
+    )
+    latitude = scrapy.Field(
+        input_processor=MapCompose(float), output_processor=TakeFirst()
+    )

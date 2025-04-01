@@ -11,6 +11,7 @@ import traceback
 from reid.spiders.base import BaseSpider
 from reid.func import (
     define_property_type,
+    extract,
     find_build_size,
     find_lease_years,
     get_icons,
@@ -156,6 +157,25 @@ class BaliTreasurePropertiesSpider(BaseSpider):
             )
             loader.add_value("description", descriptions)
             loader.add_value("availability_label", "Available")
+            # response.css("script:contains(locationCoordinates)").re_first(r'\"locationCoordinates\\"\s*:\s*\\"(.*?)\\"')
+            # output: -8.8169211, 115.1156331
+            loader.add_css(
+                "longitude",
+                "script:contains(locationCoordinates)::text",
+                MapCompose(
+                    lambda x: extract(
+                        r'locationCoordinates\s*\\":\s*\\".*?,\s*(.*?)\\"', x
+                    )
+                ),
+            )
+            loader.add_css(
+                "latitude",
+                "script:contains(locationCoordinates)::text",
+                MapCompose(
+                    lambda x: extract(r'locationCoordinates\s*\\":\s*\\"(.*?),', x)
+                ),
+            )
+
             item = loader.load_item()
 
             title = item.get("title")

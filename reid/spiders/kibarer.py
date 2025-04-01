@@ -134,6 +134,8 @@ class KibarerSpider(BaseSpider):
                     MapCompose(dimension_remover),
                 )
                 loader.add_css("description", "div.description ::Text")
+                loader.add_css("longitude", "div[data-longitude]::attr(data-longitude)")
+                loader.add_css("latitude", "div[data-latitude]::attr(data-latitude)")
 
                 item = loader.load_item()
 

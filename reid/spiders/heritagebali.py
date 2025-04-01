@@ -122,6 +122,17 @@ class HeritageBaliSpider(BaseSpider):
             "location",
             ".wpestate_estate_property_design_intext_details:contains('Bali') a:last-child::text",
         )
+
+        # response.css("#googleMapSlider::attr(data-cur_long)").get()
+        loader.add_css(
+            "longitude",
+            "#googleMapSlider::attr(data-cur_long)",
+        )
+        loader.add_css(
+            "latitude",
+            "#googleMapSlider::attr(data-cur_lat)",
+        )
+
         item = loader.load_item()
 
         # replace missing location that not in bali with real value

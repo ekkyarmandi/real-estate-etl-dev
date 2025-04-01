@@ -10,6 +10,7 @@ from reid.customs.dotproperty import (
     leasehold_years_finders,
 )
 from reid.func import (
+    extract,
     find_land_size,
     find_build_size,
     get_contract_type,
@@ -124,6 +125,17 @@ class DotPropertySpider(BaseSpider):
                     "h1::text, div.text-description ::text",
                     MapCompose(get_contract_type),
                 )
+            # response.css("script:contains(gps_lon)::text").re_first(r'=\s*"(-?[\d.]+)"')
+            loader.add_css(
+                "longitude",
+                "script:contains(gps_lon)::text",
+                MapCompose(lambda x: extract(r'=\s*"(-?[\d.]+)"', x)),
+            )
+            loader.add_css(
+                "latitude",
+                "script:contains(gps_lat)::text",
+                MapCompose(lambda x: extract(r'=\s*"(-?[\d.]+)"', x)),
+            )
 
             item = loader.load_item()
 

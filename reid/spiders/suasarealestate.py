@@ -145,6 +145,9 @@ class SuasaRealEstateSpider(BaseSpider):
             # Description
             loader.add_css("description", "#main .prop-desc-wrapper ::text")
 
+            # data-lat="-8.6570802241001" data-lng="115.15172428426"
+            loader.add_css("longitude", "#map::attr(data-lng)")
+            loader.add_css("latitude", "#map::attr(data-lat)")
             item = loader.load_item()
 
             # Additional processing
