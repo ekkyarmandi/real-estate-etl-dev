@@ -35,6 +35,8 @@ class Property(Base):
     title = Column(Text, nullable=True)
     description = Column(Text, nullable=False, default="")
     location = Column(Text, nullable=True)
+    longitude = Column(Float, nullable=True)
+    latitude = Column(Float, nullable=True)
     leasehold_years = Column(Float, nullable=True)
     contract_type = Column(String, nullable=True)
     property_type = Column(String, nullable=True)

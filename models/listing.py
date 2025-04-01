@@ -1,4 +1,13 @@
-from sqlalchemy import Column, String, Text, TIMESTAMP, Float, Boolean, BigInteger, text
+from sqlalchemy import (
+    Column,
+    String,
+    Text,
+    TIMESTAMP,
+    Float,
+    Boolean,
+    BigInteger,
+    text,
+)
 import uuid
 from datetime import datetime
 from models.base import Base
@@ -21,6 +30,8 @@ class Listing(Base):
     description = Column(Text, nullable=False, default="")
     region = Column(String, nullable=True)
     location = Column(String, nullable=True)
+    longitude = Column(Float, nullable=True)
+    latitude = Column(Float, nullable=True)
     leasehold_years = Column(Float, nullable=True)
     contract_type = Column(String, nullable=True)
     property_type = Column(String, nullable=True)
