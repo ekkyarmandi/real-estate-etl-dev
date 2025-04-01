@@ -163,7 +163,7 @@ class PropertiaBaliSpider(BaseSpider):
             if is_leasehold and not leasehold_years:
                 item["leasehold_years"] = find_lease_years(desc)
 
-            return item
+            yield item
 
         except Exception as err:
             error = Error(

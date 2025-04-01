@@ -131,7 +131,7 @@ class LuxindopropertySpider(BaseSpider):
             )
 
             item = loader.load_item()
-            return item
+            yield item
 
         except Exception as err:
             error = Error(

@@ -65,7 +65,7 @@ class KibarerSpider(BaseSpider):
             listing.sold_at = self.scraped_at
             db.commit()
             delisted_item.update({"url": redirected_url, "skip": True})
-            return delisted_item
+            yield delisted_item
         try:
             raw_contract_type = response.css(
                 "div.property-badges > div.property-badge:first-child ::Text"
@@ -150,7 +150,7 @@ class KibarerSpider(BaseSpider):
                 if is_leasehold and not leasehold_years:
                     desc = item.get("description", "")
                     item["leasehold_years"] = find_lease_years(desc)
-                return item
+                yield item
 
         except Exception as err:
             error = Error(

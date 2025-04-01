@@ -147,7 +147,7 @@ class UnrealBaliSpider(BaseSpider):
 
             title = item.get("title")
             if not title or "not found" in title:
-                return delisted_item
+                yield delisted_item
             if not item.get("leasehold_years"):
                 desc = item.get("description", "")
                 item["leasehold_years"] = find_lease_years(desc)

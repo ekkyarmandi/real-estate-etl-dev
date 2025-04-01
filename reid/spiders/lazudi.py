@@ -99,7 +99,7 @@ class LazudiSpider(BaseSpider):
                 }
             )
             db.commit()
-            return {
+            yield {
                 "source": "Lazudi",
                 "scraped_at": self.scraped_at,
                 "url": origin_url,
@@ -172,7 +172,7 @@ class LazudiSpider(BaseSpider):
                 item["build_size"] = buildsize_extractor(desc)
             if not item.get("build_size"):
                 build_size = find_build_size(desc)
-            return item
+            yield item
         except Exception as err:
             error = Error(
                 url=response.url,

@@ -51,7 +51,7 @@ class GillesdemunterSpider(BaseSpider):
             ".container div.col-4:contains(BED) span:last-child::text"
         ).get()
         if not bedrooms:
-            return delisted_item
+            yield delisted_item
         bed, bath = bedrooms.split("/")
         loader.add_css("title", "h1::text")
         loader.add_css("location", "h2::text")
