@@ -26,6 +26,18 @@ def get_local_db():
         db.close()
 
 
+def get_cloud_db():
+    engine = create_engine(
+        "postgresql://postgres:JRwoqmlNohrxRMdkInezZOEtUFzpaUfR@mainline.proxy.rlwy.net:23469/railway"
+    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 def get_checker_db():
     engine = create_engine(
         "postgresql://postgres:QelXrdrXWKwzVdkPRoHiDAAMHoGdPDkb@autorack.proxy.rlwy.net:33614/railway"

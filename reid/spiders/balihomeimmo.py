@@ -4,7 +4,7 @@ from reid.items import PropertyItem
 from itemloaders.processors import MapCompose
 from reid.func import identify_currency
 from models.error import Error
-from reid.database import get_db
+from reid.database import get_db, get_cloud_db
 import traceback
 import requests
 import re
@@ -22,17 +22,19 @@ class BaliHomeImmoSpider(BaseSpider):
 
     def start_requests(self):
         # --- Added SQLAlchemy Query ---
-        db = next(get_db())
+        db = next(get_cloud_db())
         try:
             query_date = date(2025, 4, 2)  # Note: This is a future date
-            count = (
-                db.query(func.count(Property.id))
+            self.visited_urls = (
+                db.query(Property.url)
                 .filter(
                     Property.url.like("%bali-home-immo%"),
                     Property.created_at >= query_date,
                 )
-                .scalar()
+                .all()
             )
+            self.visited_urls = [i[0] for i in self.visited_urls]
+            count = len(self.visited_urls)
             self.logger.info(
                 f"Found {count} properties from bali-home-immo created since {query_date}"
             )
