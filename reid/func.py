@@ -890,13 +890,21 @@ def first_month() -> datetime:
 
 
 def extract_currency(text):
-    match = re.search(r"\bIDR\b|\bUSD\b|\bRp\b|(IDR)\d+|(USD)\d+", text, re.IGNORECASE)
+    match = re.search(
+        r"\b(IDR)\b|\b(USD)\b|\b(Rp)\b|(IDR)\d+|(USD)\d+|\b(Rp)\s*\d+",
+        text,
+        re.IGNORECASE,
+    )
     if match:
         try:
-            return match.group(1)
+            result = match.group(1)
+            if not result:
+                return match.group()
+            else:
+                return result
         except IndexError:
             return match.group()
-    return None
+    return text
 
 
 def identify_currency(text: str) -> str:

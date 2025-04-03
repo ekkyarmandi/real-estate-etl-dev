@@ -85,6 +85,7 @@ class HeritageBaliSpider(BaseSpider):
             price[-1] if len(price) > 0 else "",
             MapCompose(get_lease_years),
         )
+        currency = loader.get_output_value("currency")
         loader.add_css(
             "land_size",
             [
