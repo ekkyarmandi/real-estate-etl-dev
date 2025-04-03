@@ -11,6 +11,9 @@ import re
 from decouple import config
 from reid.spiders.base import BaseSpider
 from reid.func import define_property_type, delisted_item
+from models import Property
+from sqlalchemy import func
+from datetime import date
 
 
 class BaliHomeImmoSpider(BaseSpider):
@@ -18,6 +21,25 @@ class BaliHomeImmoSpider(BaseSpider):
     allowed_domains = ["bali-home-immo.com", "https://jsonplaceholder.typicode.com"]
 
     def start_requests(self):
+        # --- Added SQLAlchemy Query ---
+        db = next(get_db())
+        try:
+            query_date = date(2025, 4, 2)  # Note: This is a future date
+            count = (
+                db.query(func.count(Property.id))
+                .filter(
+                    Property.url.like("%bali-home-immo%"),
+                    Property.created_at >= query_date,
+                )
+                .scalar()
+            )
+            self.logger.info(
+                f"Found {count} properties from bali-home-immo created since {query_date}"
+            )
+        finally:
+            db.close()
+        # --- End Added Query ---
+
         self.numbers = []
         self.fakeurl = "https://jsonplaceholder.typicode.com/comments/1"
         url = "https://bali-home-immo.com/realestate-property/for-sale/villa"
@@ -153,7 +175,9 @@ class BaliHomeImmoSpider(BaseSpider):
             else:
                 loader.add_value("availability_label", "Available")
 
-            contract_type = loader.get_output_value("contract_type").lower()
+            contract_type = loader.get_output_value("contract_type")
+            if contract_type:
+                contract_type = contract_type.lower()
             loader.add_css(
                 "price",
                 f"span[data-price-category={contract_type}]::attr(data-price)",

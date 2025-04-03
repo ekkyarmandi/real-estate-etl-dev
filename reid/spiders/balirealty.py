@@ -37,6 +37,7 @@ class BaliRealtySpider(BaseSpider):
         headers = {
             "Cookie": "cf_clearance=" + config("BALIREALTY_COOKIES"),
             "User-Agent": config("USER_AGENT"),
+            "cache-control": "no-cache",
         }
         response = requests.get(url, headers=headers)
         return scrapy.http.TextResponse(
