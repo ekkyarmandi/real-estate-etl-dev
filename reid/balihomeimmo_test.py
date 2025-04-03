@@ -24,6 +24,4 @@ if __name__ == "__main__":
     response = get_html(url)
     title = response.html.find("title", first=True).text
     print(response, title)
-    print(type(response.text), response.text)
-    response = Selector(text=response.text)
 
