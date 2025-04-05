@@ -8,6 +8,12 @@ import { ExternalLink, RefreshCcw } from "lucide-react";
 import { toast } from "react-toastify";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export function QueueErrors() {
   const [queueErrors, setQueueErrors] = useState([]);
@@ -18,6 +24,27 @@ export function QueueErrors() {
   const [urlTitles, setUrlTitles] = useState({});
   const [loadingTitles, setLoadingTitles] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [domains, setDomains] = useState([]);
+  const [selectedDomain, setSelectedDomain] = useState("All");
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedStatus, setSelectedStatus] = useState("Error");
+  const [isLoadingDomains, setIsLoadingDomains] = useState(true);
+  const [totalResults, setTotalResults] = useState(0);
+  const [isLoadingTitles, setIsLoadingTitles] = useState(false);
+
+  // Fetch available domains
+  const fetchDomains = async () => {
+    try {
+      const response = await fetch("http://localhost:8000/queue/domains");
+      const data = await response.json();
+      setDomains(data.domains);
+    } catch (error) {
+      console.error("Error fetching domains:", error);
+      toast.error("Failed to load domains");
+    } finally {
+      setIsLoadingDomains(false);
+    }
+  };
 
   // Handle selection change for an item
   const handleSelectionChange = (queueId, status) => {
@@ -166,74 +193,148 @@ export function QueueErrors() {
   };
 
   const fetchUrlTitle = async (url, id) => {
-    // Set loading state for this specific URL
-    setLoadingTitles((prev) => ({ ...prev, [id]: true }));
-
     try {
-      // Call our proxy API endpoint
       const response = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`);
-
       if (!response.ok) {
         throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
-
       const html = await response.text();
-
-      // Extract title using regex
       const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
       const title = titleMatch ? titleMatch[1].trim() : "No title found";
-
-      // Store the title
-      setUrlTitles((prev) => ({
-        ...prev,
-        [id]: {
-          title,
-          status: "success",
-        },
-      }));
+      return {
+        id,
+        title,
+        status: "success",
+      };
     } catch (error) {
-      console.error("Error fetching URL:", error);
-
-      // Store the error
-      setUrlTitles((prev) => ({
-        ...prev,
-        [id]: {
-          title: error.message || "Failed to load URL",
-          status: "error",
-        },
-      }));
-    } finally {
-      // Clear loading state
-      setLoadingTitles((prev) => ({ ...prev, [id]: false }));
+      return {
+        id,
+        title: error.message || "Failed to load URL",
+        status: "error",
+      };
     }
   };
 
   const fetchQueueErrors = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`http://localhost:8000/queue/errors?page=${page}`);
+
+      // Construct URL with filters
+      let url = `http://localhost:8000/queue?page=${page}`;
+
+      // Add status filter
+      if (selectedStatus !== "All") {
+        url += `&status=${selectedStatus}`;
+      }
+
+      // Add domain filter if selected
+      if (selectedDomain !== "All") {
+        url += `&domain=${selectedDomain}`;
+      }
+
+      // Add date filter if selected
+      if (selectedDate) {
+        const formattedDate = format(selectedDate, "yyyy-MM-dd");
+        url += `&date=${formattedDate}`;
+      }
+
+      const response = await fetch(url);
 
       if (!response.ok) {
-        throw new Error("Failed to fetch queue errors");
+        throw new Error("Failed to fetch queue data");
       }
 
       const data = await response.json();
-      setQueueErrors(data.results.queues);
+      setQueueErrors(data.results.items || []);
       setTotalPages(Math.ceil(data.results.total / data.results.count));
+      setTotalResults(data.results.total || 0);
 
       // Initialize all selections to "None"
       const initialSelections = {};
-      data.results.queues.forEach((error) => {
+      (data.results.items || []).forEach((error) => {
         initialSelections[error.id] = "None";
       });
       setSelectedActions(initialSelections);
     } catch (error) {
-      console.error("Error fetching queue errors:", error);
-      toast.error(error.message || "Failed to load queue errors");
+      console.error("Error fetching queue data:", error);
+      toast.error(error.message || "Failed to load queue data");
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Apply filters and reload data
+  const applyFilters = () => {
+    setPage(1); // Reset to first page when filters change
+    fetchQueueErrors();
+  };
+
+  const fetchAllTitles = async () => {
+    if (isLoadingTitles) return;
+
+    const unloadedItems = queueErrors.filter((error) => !urlTitles[error.id]);
+
+    if (unloadedItems.length === 0) {
+      toast.info("All titles are already loaded");
+      return;
+    }
+
+    setIsLoadingTitles(true);
+    const loadingToastId = toast.loading(`Loading ${unloadedItems.length} titles...`);
+
+    try {
+      // Process URLs in batches of 5
+      const batchSize = 5;
+
+      for (let i = 0; i < unloadedItems.length; i += batchSize) {
+        const batch = unloadedItems.slice(i, i + batchSize);
+        const promises = batch.map((error) => fetchUrlTitle(error.url, error.id));
+
+        const batchResults = await Promise.all(promises);
+
+        // Update titles for this batch
+        const newTitles = {};
+        batchResults.forEach((result) => {
+          newTitles[result.id] = {
+            title: result.title,
+            status: result.status,
+          };
+        });
+
+        // Update state with new titles
+        setUrlTitles((prev) => ({
+          ...prev,
+          ...newTitles,
+        }));
+
+        // Update progress
+        const progress = Math.min(i + batchSize, unloadedItems.length);
+        toast.update(loadingToastId, {
+          render: `Loading titles... (${progress}/${unloadedItems.length})`,
+        });
+      }
+
+      toast.update(loadingToastId, {
+        render: `Successfully loaded ${unloadedItems.length} titles`,
+        type: "success",
+        isLoading: false,
+        autoClose: 3000,
+      });
+    } catch (error) {
+      toast.update(loadingToastId, {
+        render: "Failed to load some titles",
+        type: "error",
+        isLoading: false,
+        autoClose: 3000,
+      });
+    } finally {
+      setIsLoadingTitles(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDomains();
+  }, []);
 
   useEffect(() => {
     fetchQueueErrors();
@@ -243,17 +344,95 @@ export function QueueErrors() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle>Queue Errors</CardTitle>
-          <CardDescription>URLs with error status from queue</CardDescription>
+          <CardTitle>Queue List</CardTitle>
+          <CardDescription>URL entries from the queue</CardDescription>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="flex justify-end">
+        <div className="flex gap-4 w-fit border p-4 rounded-md items-end mb-4">
+          <div>
+            <label className="text-sm font-medium" htmlFor="domain">
+              Domain
+            </label>
+            <Select value={selectedDomain} onValueChange={setSelectedDomain} disabled={isLoadingDomains}>
+              <SelectTrigger className="w-[180px] hover:cursor-pointer">
+                <SelectValue placeholder="Select a domain" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All</SelectItem>
+                {domains.map((domain) => (
+                  <SelectItem key={domain} value={domain}>
+                    {domain}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm font-medium" htmlFor="status">
+              Status
+            </label>
+            <Select value={selectedStatus} onValueChange={setSelectedStatus} disabled={isLoading}>
+              <SelectTrigger className="w-[180px] hover:cursor-pointer">
+                <SelectValue placeholder="Select a status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All</SelectItem>
+                <SelectItem value="Available">Available</SelectItem>
+                <SelectItem value="Delisted">Delisted</SelectItem>
+                <SelectItem value="Sold">Sold</SelectItem>
+                <SelectItem value="Error">Error</SelectItem>
+                <SelectItem value="Rented">Rented</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col">
+            <label className="text-sm font-medium" htmlFor="date">
+              Date
+            </label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className={cn("w-[180px] justify-start text-left font-normal hover:cursor-pointer", !selectedDate && "text-muted-foreground")}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {selectedDate ? format(selectedDate, "PPP") : "Select date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar mode="single" selected={selectedDate} onSelect={setSelectedDate} initialFocus />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div>
+            <Button className="hover:cursor-pointer" onClick={applyFilters} disabled={isLoading}>
+              Apply Filters
+            </Button>
+          </div>
+          <div>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSelectedDomain("All");
+                setSelectedDate(null);
+                setSelectedStatus("Error");
+                setPage(1);
+                fetchQueueErrors();
+              }}
+              disabled={isLoading}
+              className="hover:cursor-pointer"
+            >
+              Reset
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex justify-end mb-4 gap-2">
+          <Button variant="outline" size="sm" onClick={fetchAllTitles} disabled={isLoading || isLoadingTitles} className="flex items-center gap-2">
+            <span>{isLoadingTitles ? "Loading Titles..." : "Fetch All"}</span>
+          </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
-              setPage(1); // Reset to first page
               fetchQueueErrors();
             }}
             disabled={isLoading}
@@ -266,6 +445,9 @@ export function QueueErrors() {
       </CardContent>
       <CardContent>
         <div className="rounded-md border">
+          <div className="px-4 py-2">
+            <p className="text-sm font-light">Total results: {totalResults}</p>
+          </div>
           <Table>
             <TableHeader>
               <TableRow>
@@ -289,11 +471,9 @@ export function QueueErrors() {
                           <ExternalLink className="h-4 w-4 inline-block mr-2" />
                           {error.url.length > 50 ? error.url.substring(0, 50) + "..." : error.url}
                         </a>
-                        <button className="px-2 py-1 text-xs rounded-md border hover:cursor-pointer hover:bg-muted" onClick={() => fetchUrlTitle(error.url, error.id)} disabled={loadingTitles[error.id]}>
-                          {loadingTitles[error.id] ? "Loading..." : "Load"}
-                        </button>
                       </div>
                       {urlTitles[error.id] && <span className={`text-xs block mt-1 ${urlTitles[error.id].status === "success" ? "text-muted-foreground" : "text-red-500"}`}>{urlTitles[error.id].title}</span>}
+                      {loadingTitles[error.id] && <span className="text-xs block mt-1 text-muted-foreground">Loading...</span>}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2 items-center">

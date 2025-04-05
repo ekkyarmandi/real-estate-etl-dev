@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { QueueStats, JsonUrlUpload, QueueErrors } from "./components";
+import { QueueStats, JsonUrlUpload, QueueErrors, ManualCheck } from "./components";
 import { Button } from "@/components/ui/button";
 import { Cloud } from "lucide-react";
 
@@ -16,9 +16,13 @@ function QueuePage() {
       <h1 className="text-2xl font-bold mb-6">Queue Management</h1>
 
       <Tabs defaultValue="stats" className="w-full" onValueChange={setActiveTab}>
-        <TabsList className="grid w-full max-w-md grid-cols-2 mb-8">
-          <TabsTrigger value="stats">Queue Stats</TabsTrigger>
-          <TabsTrigger value="upload">Upload Data</TabsTrigger>
+        <TabsList className="grid w-full max-w-md grid-cols-3 mb-8">
+          <TabsTrigger className="hover:cursor-pointer" value="stats">
+            Queue Stats
+          </TabsTrigger>
+          <TabsTrigger className="hover:cursor-pointer" value="upload">
+            Upload Data
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="stats" className="mt-0 flex flex-col gap-y-6">
           <Button
