@@ -13,7 +13,6 @@ import uuid
 import re
 from datetime import datetime
 from models.base import Base
-from models.rawdata import RawData
 from models.tags import Tag
 from reid.database import get_db
 from reid.settings import ZONING_COLORS, ZONING_CATEGORIES
@@ -23,9 +22,6 @@ class Property(Base):
     __tablename__ = "property"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    raw_data_id = Column(
-        String, ForeignKey(RawData.id, ondelete="CASCADE"), nullable=False
-    )
     property_id = Column(String, nullable=True)
     source = Column(String, nullable=False)
     scraped_at = Column(TIMESTAMP, default=datetime.now())
@@ -53,7 +49,6 @@ class Property(Base):
     is_off_plan = Column(Boolean, default=False)
 
     tags = relationship("Tag", back_populates="property")
-    rawdata = relationship("RawData", back_populates="property")
 
     def check_off_plan(self, labels: list = []) -> bool:
         labels.extend(

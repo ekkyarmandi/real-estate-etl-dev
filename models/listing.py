@@ -23,7 +23,7 @@ class Listing(Base):
     source = Column(String, nullable=False)
     scraped_at = Column(TIMESTAMP, default=datetime.now())
     created_at = Column(TIMESTAMP, default=datetime.now())
-    updated_at = Column(TIMESTAMP, default=datetime.now, onupdate=datetime.now)
+    updated_at = Column(TIMESTAMP, default=datetime.now(), onupdate=datetime.now())
     url = Column(Text, nullable=False, unique=True)
     image_url = Column(Text, nullable=False, default="")
     title = Column(Text, nullable=True)
