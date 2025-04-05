@@ -15,8 +15,11 @@ sys.path.append(parent_dir)
 
 # Now import the routers - they will handle their own model imports
 # from api.routers import tags_routes
-from routers import analytics_routes
-from routers import data_routes
+from routers import (
+    analytics_routes,
+    data_routes,
+    queue_routes,
+)
 
 app = FastAPI(
     title="DataScraper API",
@@ -24,10 +27,11 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Include routers
 app.include_router(analytics_routes.router)
 # app.include_router(tags_routes.router)
 app.include_router(data_routes.router)
-
+app.include_router(queue_routes.router)
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,

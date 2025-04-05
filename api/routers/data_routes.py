@@ -70,12 +70,14 @@ async def get_queue_stats(db: Session = Depends(get_checker_db)):
 @router.post("/upload")
 async def upload_file(
     file: Optional[UploadFile] = File(None),
+    url_field: Optional[str] = Form(default="Property Link"),
     db: Session = Depends(get_checker_db),
 ):
     """
     Receives data from the frontend and prints it to the terminal.
     Can accept either:
     - A file upload that contains JSON data
+    - A URL field in the form data
 
     Returns the parsed data or appropriate error messages.
     """
@@ -87,6 +89,8 @@ async def upload_file(
         try:
             # Try to parse content as JSON
             data = json.loads(content)
+            urls = [item[url_field] for item in data]
+            # TODO: insert url into queue table
             urls = [
                 item["Property Link"]
                 for item in data
@@ -101,6 +105,13 @@ async def upload_file(
             urls = [url for url in urls if get_domain(url) not in BLACKLIST_DOMAINS]
             urls = [url for url in urls if url is not None]
             urls = [url for url in urls if url.startswith("http")]
+
+            domains = []
+            for url in urls:
+                domain = get_domain(url)
+                if domain not in domains:
+                    domains.append(domain)
+            print(domains)
 
             # filter urls that are already exist in queue
             if queue_urls:
@@ -121,14 +132,26 @@ async def upload_file(
                         status="Available",
                     )
                     queues.append(queue)
+
                 try:
                     db.add_all(queues)
                     db.commit()
+                    print(f"[{i}] Inserted {len(queues)} queues")
                 except Exception as err:
                     db.rollback()
+                    print(f"[{i}] Error inserting queues: {err}")
+            result = {"urls": urls, "count": len(urls)}
         except json.JSONDecodeError:
+            # If content is not valid JSON, raise an error
             raise HTTPException(
                 status_code=400, detail="Invalid JSON data in the uploaded file"
             )
 
-    return {"status": "success", "data": {"count": len(urls)}}
+    # Ensure at least one input was provided
+    if not result:
+        raise HTTPException(
+            status_code=400,
+            detail="No data provided. Please upload a file or provide a URL.",
+        )
+
+    return {"status": "success", "data": result}

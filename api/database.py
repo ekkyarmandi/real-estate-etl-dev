@@ -40,3 +40,20 @@ def get_checker_db() -> Session:
         yield db
     finally:
         db.close()
+
+
+def get_local_db() -> Session:
+    """
+    Dependency function that yields a synchronous Session.
+    Ensures the session is closed afterwards.
+    """
+    engine = create_engine(
+        "postgresql://postgres:postgres@localhost:5432/reid-db",
+        echo=True,
+    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
