@@ -32,6 +32,7 @@ app.include_router(analytics_routes.router)
 # app.include_router(tags_routes.router)
 app.include_router(data_routes.router)
 app.include_router(queue_routes.router)
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,

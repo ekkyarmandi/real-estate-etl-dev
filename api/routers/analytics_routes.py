@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from sqlalchemy import func, desc
 
-from models.listing import CheckerListing
+from models.listing import Listing
 from models.report import Report
 from schemas.report import ReportList
 
@@ -25,7 +25,7 @@ def get_monthly_new_listings_count(db: Session = Depends(get_db)):
     Retrieve the total count of new listings scraped.
     """
     try:
-        listings = db.query(CheckerListing).all()
+        listings = db.query(Listing).all()
         total = {}
         for listing in listings:
             reid_id = listing.reid_id
