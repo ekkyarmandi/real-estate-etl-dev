@@ -30,7 +30,7 @@ function QueuePage() {
             variant="outline"
             onClick={() => {
               setSyncing(true);
-              fetch("http://localhost:8000/queue/sync")
+              fetch(`${process.env.NEXT_PUBLIC_API_URL}/queue/sync`)
                 .then((res) => res.json())
                 .then((data) => {
                   setSyncingMessage(data.details);

@@ -14,7 +14,7 @@ export function ReportTable({ selectedDate }) {
 
       try {
         setIsLoading(true);
-        const response = await fetch(`http://localhost:8000/analytics/report?date=${selectedDate}`);
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analytics/report?date=${selectedDate}`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch report data");

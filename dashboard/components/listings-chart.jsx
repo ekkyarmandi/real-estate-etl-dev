@@ -14,7 +14,7 @@ export function ListingsChart({ onDateSelect }) {
     const fetchData = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch("http://localhost:8000/analytics/listings-count", {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analytics/listings-count`, {
           cache: "force-cache",
         });
 

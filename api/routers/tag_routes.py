@@ -9,7 +9,7 @@ from sqlalchemy import func, or_
 from datetime import datetime
 import re
 
-from reid.database import get_db
+from database import get_db
 from models import Tag, Property, Listing
 from schemas.tag import BuildUpdatePayload, TagCount, TagList, BulkMarkAsSolvedOrIgnored
 

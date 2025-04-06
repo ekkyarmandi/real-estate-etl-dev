@@ -35,7 +35,7 @@ export function QueueErrors() {
   // Fetch available domains
   const fetchDomains = async () => {
     try {
-      const response = await fetch("http://localhost:8000/queue/domains");
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/queue/domains`);
       const data = await response.json();
       setDomains(data.domains);
     } catch (error) {
@@ -89,7 +89,7 @@ export function QueueErrors() {
       console.log("Sending update request with items:", items);
 
       // Send a single request with all updates
-      const response = await fetch(`http://localhost:8000/queue/errors/bulk`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/queue/errors/bulk`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -220,7 +220,7 @@ export function QueueErrors() {
       setIsLoading(true);
 
       // Construct URL with filters
-      let url = `http://localhost:8000/queue?page=${page}`;
+      let url = `${process.env.NEXT_PUBLIC_API_URL}/queue?page=${page}`;
 
       // Add status filter
       if (selectedStatus !== "All") {

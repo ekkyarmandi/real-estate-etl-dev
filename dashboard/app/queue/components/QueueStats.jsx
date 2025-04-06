@@ -21,7 +21,7 @@ export function QueueStats() {
     const fetchQueueStats = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch("http://localhost:8000/data/queue/stats");
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/data/queue/stats`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch queue statistics");
@@ -108,7 +108,7 @@ export function QueueStats() {
             color="text-red-500"
             onClick={async () => {
               setIsErrorsLoading(true);
-              const response = await fetch("http://localhost:8000/queue/errors/count");
+              const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/queue/errors/count`);
               const data = await response.json();
               setStats({ ...stats, errors: data.results.count });
               setIsErrorsLoading(false);
