@@ -125,17 +125,44 @@ async def update_listing(
     if not p:
         raise HTTPException(status_code=404, detail="Property not found")
 
-    # update the property
+    # update the property with all editable fields
+    p.title = data.get("title", p.title)
     p.description = data.get("description", p.description)
-    db.commit()
-    db.refresh(p)
+    p.location = data.get("location", p.location)
+    p.leasehold_years = data.get("leasehold_years", p.leasehold_years)
+    p.contract_type = data.get("contract_type", p.contract_type)
+    p.property_type = data.get("property_type", p.property_type)
+    p.bedrooms = data.get("bedrooms", p.bedrooms)
+    p.bathrooms = data.get("bathrooms", p.bathrooms)
+    p.build_size = data.get("build_size", p.build_size)
+    p.price = data.get("price", p.price)
+    p.currency = data.get("currency", p.currency)
+    p.availability = data.get("availability", p.availability)
+    p.is_available = (
+        data.get("availability", "") == "Available"
+        if "availability" in data
+        else p.is_available
+    )
 
-    # update the listing
+    # Handle excluded_by field
+    excluded_by = data.get("excluded_by", None)
+    if excluded_by:
+        p.excluded_by = excluded_by
+        p.is_excluded = True
+    else:
+        p.is_excluded = False
+
+    db.commit()
+
+    # update the listing if it exists
     l = db.query(Listing).filter(Listing.url == p.url).first()
     if l:
-        l.description = data.get("description", l.description)
+        l_keys = l.__dict__.keys()
+        for key, value in data.items():
+            if key != "id" and key in l_keys:
+                setattr(l, key, value)
         db.commit()
-        db.refresh(l)
+
     return {"message": "success"}
 
 

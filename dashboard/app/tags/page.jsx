@@ -415,7 +415,6 @@ export default function TagsPage() {
                         <TableHead className="whitespace-nowrap">Price</TableHead>
                         <TableHead className="whitespace-nowrap">Availability</TableHead>
                         <TableHead className="whitespace-nowrap">Sold At</TableHead>
-                        <TableHead className="whitespace-nowrap">Excluded</TableHead>
                         <TableHead className="whitespace-nowrap">Excluded By</TableHead>
                         <TableHead className="whitespace-nowrap">Tab</TableHead>
                         <TableHead className="whitespace-nowrap text-right">Actions</TableHead>
@@ -660,7 +659,9 @@ export default function TagsPage() {
                                 className="h-7 text-xs w-full"
                                 value={`${getPropertyValue(property, "currency") || property.currency} ${getPropertyValue(property, "price") || property.price}`.trim()}
                                 onChange={(e) => {
-                                  handleCellChange(property.id, "price_display", e.target.value);
+                                  const value = e.target.value;
+                                  handleCellChange(property.id, "price", value);
+                                  handlePropertyChange(property.id, "price", value);
                                 }}
                                 autoFocus
                                 onBlur={() => toggleEditMode(property.id, "price")}
@@ -671,7 +672,7 @@ export default function TagsPage() {
                                 }}
                               />
                             ) : (
-                              <span>{property.price ? `${property.currency} ${property.price.toLocaleString()}` : "-"}</span>
+                              <span>{property.price ? `${property.currency} ${property.price}` : "-"}</span>
                             )}
                           </TableCell>
                           <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "availability")}>
@@ -721,31 +722,17 @@ export default function TagsPage() {
                               <span>{property.sold_at ? new Date(property.sold_at).toLocaleDateString() : "-"}</span>
                             )}
                           </TableCell>
-                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "is_excluded")}>
-                            {isEditing(property.id, "is_excluded") ? (
-                              <div className="flex items-center space-x-2">
-                                <Switch
-                                  checked={getPropertyValue(property, "is_excluded") || false}
-                                  onCheckedChange={(checked) => {
-                                    handleCellChange(property.id, "is_excluded", checked);
-                                    handlePropertyChange(property.id, "is_excluded", checked);
-                                  }}
-                                />
-                              </div>
-                            ) : property.is_excluded ? (
-                              <Badge variant="destructive">Yes</Badge>
-                            ) : (
-                              <Badge variant="outline">No</Badge>
-                            )}
-                          </TableCell>
                           <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "excluded_by")}>
                             {isEditing(property.id, "excluded_by") ? (
                               <Input
                                 className="h-7 text-xs w-full"
                                 value={getPropertyValue(property, "excluded_by") || ""}
                                 onChange={(e) => {
-                                  handleCellChange(property.id, "excluded_by", e.target.value);
-                                  handlePropertyChange(property.id, "excluded_by", e.target.value);
+                                  const value = e.target.value;
+                                  handleCellChange(property.id, "excluded_by", value);
+                                  handlePropertyChange(property.id, "excluded_by", value);
+
+                                  // The backend will handle setting is_excluded based on excluded_by
                                 }}
                                 autoFocus
                                 onBlur={() => toggleEditMode(property.id, "excluded_by")}
@@ -756,7 +743,7 @@ export default function TagsPage() {
                                 }}
                               />
                             ) : (
-                              <span>{property.excluded_by || "-"}</span>
+                              <div>{property.excluded_by ? <span>{property.excluded_by}</span> : "-"}</div>
                             )}
                           </TableCell>
                           <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "tab")}>
