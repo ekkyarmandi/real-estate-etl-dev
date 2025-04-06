@@ -5,9 +5,9 @@ Routes for queue management
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
-
+from tqdm import tqdm
 from api.func import get_domain
-from database import get_checker_db
+from database import get_checker_db, get_db
 from models import Queue, Listing
 from schemas.queue import StatusUpdate, BulkStatusUpdate
 
@@ -59,41 +59,61 @@ async def get_domains(db: Session = Depends(get_checker_db)):
 
 
 @router.get("/sync")
-async def sync_queue_to_listing(db: Session = Depends(get_checker_db)):
+async def sync_queue_to_listing(
+    db: Session = Depends(get_checker_db), cloud_db: Session = Depends(get_db)
+):
     """
-    Sync queue result to listing table
+    Sync queue from Checker DB to REID DB
     """
-    # count all available queue that exist in listing table
-    listing_urls = db.query(Listing.url).filter(Listing.is_available).all()
-    listing_urls = [url[0] for url in listing_urls]
-    queues = db.query(Queue).filter(
-        Queue.status.not_in(["Available", "Excluded", "Error"]),
-        Queue.url.in_(listing_urls),
-    )
-    # update listing table with queue result
+    # query all not available queues from checker db
+    this_month = datetime.now().strftime("%Y-%m-01")
+    statuses = ["Delisted", "Error"]
     count = 0
-    errors = 0
-    not_available = 0
-    for q in queues:
-        listing = db.query(Listing).filter(Listing.url == q.url).first()
-        if listing:
-            listing.is_available = False
-            listing.available_text = q.status
-            try:
-                db.commit()
-                count += 1
-            except Exception as e:
-                print(f"Error updating listing {q.url}: {e}")
-                db.rollback()
-                errors += 1
-        else:
-            not_available += 1
+    for status in statuses:
+        queues = (
+            db.query(Queue)
+            .filter(Queue.status == status, Queue.updated_at >= this_month)
+            .all()
+        )
+        queue_urls = [q.url for q in queues]
+        listings = (
+            cloud_db.query(Listing)
+            .filter(Listing.url.in_(queue_urls), Listing.is_available == False)
+            .all()
+        )
+        for listing in listings:
+            listing.status = status
+            listing.updated_at = datetime.now()
+            listing.is_available = status == "Available"
+            count += 1
+    # query all available queues from checker db
+    queues = (
+        db.query(Queue)
+        .filter(Queue.status == "Available", Queue.updated_at >= this_month)
+        .all()
+    )
+    queue_urls = [q.url for q in queues]
+    listings = (
+        cloud_db.query(Listing)
+        .filter(Listing.url.in_(queue_urls), Listing.is_available == False)
+        .all()
+    )
+    for listing in tqdm(listings, desc="Syncing available queues"):
+        listing.status = "Available"
+        listing.updated_at = datetime.now()
+        listing.is_available = True
+        count += 1
+
+    # commit all changes
+    try:
+        cloud_db.commit()
+    except Exception as e:
+        print(f"Error updating listing {listing.url}: {e}")
+        cloud_db.rollback()
+
     return {
         "message": "success",
-        "count": count,
-        "errors": errors,
-        "not_available": not_available,
-        "details": f"{count} listings have been updated",
+        "details": f"{count} queues have been synced",
     }
 
 
