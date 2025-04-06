@@ -418,8 +418,15 @@ export default function TagsPage() {
   const handleSolveAll = useCallback(
     (tagName) => {
       handleBulkMarked(tagName, "solved");
+
+      // After bulk marking, check if we need to refetch
+      setTimeout(() => {
+        if (selectedTag && (!tagDetails || tagDetails.length === 0)) {
+          fetchTagDetails(1);
+        }
+      }, 500);
     },
-    [handleBulkMarked]
+    [handleBulkMarked, selectedTag, tagDetails, fetchTagDetails]
   );
 
   // Handle bulk ignore - convenience wrapper for handleBulkMarked with mode=ignored
