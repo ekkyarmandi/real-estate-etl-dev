@@ -7,10 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from datetime import datetime
+import re
 
 from reid.database import get_db
 from models import Tag, Property, Listing
-from schemas.tag import TagCount, TagList, BulkMarkAsSolvedOrIgnored
+from schemas.tag import BuildUpdatePayload, TagCount, TagList, BulkMarkAsSolvedOrIgnored
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -25,7 +26,7 @@ async def get_tags(date: Optional[str] = None, db: Session = Depends(get_db)):
     )
 
     # filter the tags if it's solved or ignored
-    query = query.filter(or_(Tag.is_solved == False, Tag.is_ignored == False))
+    query = query.filter((Tag.is_solved == False) & (Tag.is_ignored == False))
 
     if date:
         query = query.filter(Property.created_at >= date)
@@ -55,8 +56,9 @@ async def get_tag_details(
         db.query(Property)
         .filter(
             Property.tags.any(
-                Tag.name == tag_name
-                and or_(Tag.is_solved == False, Tag.is_ignored == False),
+                (Tag.name == tag_name)
+                & (Tag.is_solved == False)
+                & (Tag.is_ignored == False)
             )
         )
         .order_by(Property.source)
@@ -312,4 +314,45 @@ async def bulk_mark_as_solved_or_ignored(
 
     db.commit()
 
+    return {"message": "success"}
+
+
+@router.patch("/bulk-update")
+async def bulk_update(form: BuildUpdatePayload, db: Session = Depends(get_db)):
+    """
+    Bulk update properties
+    """
+    for item in form.items:
+        # query related property
+        property = db.query(Property).filter(Property.id == item["id"]).first()
+        if property:
+            pkeys = property.__dict__.keys()
+            pkeys = list(filter(lambda x: re.search("^[a-z]", x), pkeys))
+            for key, value in item.items():
+                if key == "id":
+                    continue
+                else:
+                    setattr(property, key, value)
+            try:
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                raise HTTPException(status_code=500, detail=str(e))
+        else:
+            continue
+        # query related listing
+        listing = db.query(Listing).filter(Listing.url == property.url).first()
+        if listing:
+            lkeys = listing.__dict__.keys()
+            lkeys = list(filter(lambda x: re.search("^[a-z]", x), lkeys))
+            for key, value in item.items():
+                if key == "id":
+                    continue
+                else:
+                    setattr(listing, key, value)
+            try:
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                raise HTTPException(status_code=500, detail=str(e))
     return {"message": "success"}

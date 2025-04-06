@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function TagsPage() {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -430,6 +430,62 @@ export default function TagsPage() {
     [handleBulkMarked]
   );
 
+  // Handle bulk save function for multiple property updates
+  const handleSaveAll = useCallback(async () => {
+    // Only proceed if there are edited properties
+    const propertyIdsWithChanges = Object.keys(editedProperties);
+
+    if (propertyIdsWithChanges.length === 0) {
+      toast.info("No changes to save");
+      return;
+    }
+
+    // Show loading state for all edited rows
+    setSavingRows(propertyIdsWithChanges.reduce((acc, id) => ({ ...acc, [id]: true }), {}));
+
+    try {
+      // Build the request payload with the format expected by the API
+      // Following BuildUpdatePayload schema: { items: List[dict] }
+      const payload = {
+        items: propertyIdsWithChanges.map((id) => ({
+          id,
+          ...editedProperties[id],
+        })),
+      };
+
+      console.log("Saving changes for properties:", payload);
+
+      // Send the request to the bulk update endpoint using PATCH method
+      const response = await fetch(`${baseUrl}/tags/bulk-update`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Error ${response.status}: ${errorData.detail || "Failed to save changes"}`);
+      }
+
+      const result = await response.json();
+      toast.success(result.message || `Changes saved successfully for ${propertyIdsWithChanges.length} properties`);
+
+      // Clear edited properties since they're now saved
+      setEditedProperties({});
+
+      // Clear editing cells
+      setEditingCells({});
+    } catch (error) {
+      console.error("Error bulk saving properties:", error);
+      toast.error(`Failed to save changes: ${error.message}`);
+    } finally {
+      // Clear all loading states
+      setSavingRows({});
+    }
+  }, [baseUrl, editedProperties]);
+
   return (
     <div className="p-4 md:p-6">
       <h1 className="text-2xl font-bold mb-6 md:mb-8">Data Quality Control</h1>
@@ -448,7 +504,7 @@ export default function TagsPage() {
                 <p className="text-sm text-muted-foreground">Loading...</p>
               ) : tags.length > 0 ? (
                 tags.map((tag) => (
-                  <Badge key={tag.id} className="hover:bg-muted cursor-pointer" variant={selectedTag && selectedTag.id === tag.id ? "default" : "outline"} onClick={() => handleTagClick(tag)}>
+                  <Badge key={tag.id} className="cursor-pointer" variant={selectedTag && selectedTag.id === tag.id ? "default" : "outline"} onClick={() => handleTagClick(tag)}>
                     {tag.name} ({tag.count})
                   </Badge>
                 ))
@@ -523,7 +579,17 @@ export default function TagsPage() {
                                 }}
                               />
                             ) : (
-                              <span>{property.title || "-"}</span>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="hover:underline flex items-center gap-1">
+                                    <span>{property.title || "-"}</span>
+                                    <ExternalLink className="h-3 w-3" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>{property.title || "-"}</p>
+                                </TooltipContent>
+                              </Tooltip>
                             )}
                           </TableCell>
                           <TableCell className="max-w-[200px] truncate cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "description")}>
@@ -909,6 +975,16 @@ export default function TagsPage() {
                     Showing {tagDetails.length} of {totalResults} results
                   </div>
                   <div className="flex items-center space-x-2">
+                    <Button className="bg-emerald-500 hover:bg-emerald-600" onClick={handleSaveAll} disabled={Object.keys(editedProperties).length === 0 || Object.keys(savingRows).length > 0}>
+                      {Object.keys(savingRows).length > 0 ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        "Save All"
+                      )}
+                    </Button>
                     <Button
                       className="bg-emerald-500 hover:bg-emerald-600"
                       variant="default"

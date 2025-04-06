@@ -31,3 +31,7 @@ class BulkMarkAsSolvedOrIgnored(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class BuildUpdatePayload(BaseModel):
+    items: List[dict]
