@@ -33,8 +33,7 @@ function QueuePage() {
               fetch("http://localhost:8000/queue/sync")
                 .then((res) => res.json())
                 .then((data) => {
-                  const message = `${data.count} listings have been updated (${data.errors} errors, ${data.not_available} not available)`;
-                  setSyncingMessage(message);
+                  setSyncingMessage(data.details);
                   setSyncing(false);
                 });
             }}
@@ -45,6 +44,7 @@ function QueuePage() {
             </div>
             <p className="text-sm text-muted-foreground">{syncing ? "Syncing..." : syncingMessage}</p>
           </Button>
+          {/* Queue Features */}
           <QueueStats />
           <QueueErrors />
         </TabsContent>
