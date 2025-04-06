@@ -5,7 +5,6 @@ Routes for queue management
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
-from tqdm import tqdm
 from api.func import get_domain
 from database import get_checker_db, get_db
 from models import Queue, Listing
@@ -98,7 +97,7 @@ async def sync_queue_to_listing(
         .filter(Listing.url.in_(queue_urls), Listing.is_available == False)
         .all()
     )
-    for listing in tqdm(listings, desc="Syncing available queues"):
+    for listing in listings:
         listing.status = "Available"
         listing.updated_at = datetime.now()
         listing.is_available = True
