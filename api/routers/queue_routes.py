@@ -5,7 +5,7 @@ Routes for queue management
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
-from api.func import get_domain
+from func import get_domain
 from database import get_checker_db, get_db
 from models import Queue, Listing
 from schemas.queue import StatusUpdate, BulkStatusUpdate
