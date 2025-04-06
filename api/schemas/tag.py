@@ -23,3 +23,11 @@ class TagList(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class BulkMarkAsSolvedOrIgnored(BaseModel):
+    property_ids: List[str]
+    mode: str = "solved"
+
+    class Config:
+        from_attributes = True

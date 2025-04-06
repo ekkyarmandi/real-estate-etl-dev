@@ -103,6 +103,11 @@ export default function TagsPage() {
         setTagDetails(data.data || []);
         setTotalResults(data.total || 0);
         setCurrentPage(page);
+
+        // Calculate total pages
+        const pageSize = data.size || 50;
+        const total = data.total || 0;
+        setTotalPages(Math.ceil(total / pageSize));
       } catch (error) {
         console.error("Error fetching tag details:", error);
         toast.error(`Failed to load tag details: ${error.message}`);
@@ -354,6 +359,77 @@ export default function TagsPage() {
     [editedProperties]
   );
 
+  // Add handleBulkMarked function to bulk mark issues as solved or ignored
+  const handleBulkMarked = useCallback(
+    async (tagName, mode) => {
+      if (!tagName || !tagDetails.length) return;
+
+      // Show loading state for all rows
+      const propertyIds = tagDetails.map((p) => p.id);
+      setSavingRows(propertyIds.reduce((acc, id) => ({ ...acc, [id]: true }), {}));
+
+      try {
+        // Build the request payload
+        const payload = {
+          property_ids: propertyIds,
+          mode: mode, // "solved" or "ignored"
+        };
+
+        console.log(`Bulk marking ${propertyIds.length} properties as ${mode}`);
+
+        // Send the request
+        const response = await fetch(`${baseUrl}/tags/bulk-marked/${tagName}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Error ${response.status}: ${errorData.detail || `Failed to mark issues as ${mode}`}`);
+        }
+
+        const result = await response.json();
+        toast.success(result.message || `${propertyIds.length} issues marked as ${mode} successfully`);
+
+        // Update the UI
+        // 1. Clear the current list
+        setTagDetails([]);
+        // 2. Decrement the count in the tag list by the number of items processed
+        if (selectedTag) {
+          setTags((prevTags) => prevTags.map((tag) => (tag.id === selectedTag.id ? { ...tag, count: Math.max(0, tag.count - propertyIds.length) } : tag)));
+          // 3. Update total results
+          setTotalResults(0);
+        }
+      } catch (error) {
+        console.error(`Error bulk marking issues as ${mode}:`, error);
+        toast.error(`Failed to mark issues as ${mode}: ${error.message}`);
+      } finally {
+        // Clear all loading states
+        setSavingRows({});
+      }
+    },
+    [baseUrl, selectedTag, tagDetails]
+  );
+
+  // Handle bulk solve - convenience wrapper for handleBulkMarked with mode=solved
+  const handleSolveAll = useCallback(
+    (tagName) => {
+      handleBulkMarked(tagName, "solved");
+    },
+    [handleBulkMarked]
+  );
+
+  // Handle bulk ignore - convenience wrapper for handleBulkMarked with mode=ignored
+  const handleIgnoreAll = useCallback(
+    (tagName) => {
+      handleBulkMarked(tagName, "ignored");
+    },
+    [handleBulkMarked]
+  );
+
   return (
     <div className="p-4 md:p-6">
       <h1 className="text-2xl font-bold mb-6 md:mb-8">Data Quality Control</h1>
@@ -416,7 +492,6 @@ export default function TagsPage() {
                         <TableHead className="whitespace-nowrap">Availability</TableHead>
                         <TableHead className="whitespace-nowrap">Sold At</TableHead>
                         <TableHead className="whitespace-nowrap">Excluded By</TableHead>
-                        <TableHead className="whitespace-nowrap">Tab</TableHead>
                         <TableHead className="whitespace-nowrap text-right">Actions</TableHead>
                         <TableHead className="whitespace-nowrap text-right">Issue</TableHead>
                       </TableRow>
@@ -660,8 +735,24 @@ export default function TagsPage() {
                                 value={`${getPropertyValue(property, "currency") || property.currency} ${getPropertyValue(property, "price") || property.price}`.trim()}
                                 onChange={(e) => {
                                   const value = e.target.value;
-                                  handleCellChange(property.id, "price", value);
-                                  handlePropertyChange(property.id, "price", value);
+                                  // Parse the price input to extract currency and value
+                                  const parts = value.split(" ");
+                                  if (parts.length >= 2) {
+                                    const currency = parts[0];
+                                    // Join the rest and remove any commas or non-numeric chars except decimal point
+                                    const priceText = parts
+                                      .slice(1)
+                                      .join("")
+                                      .replace(/[^\d.]/g, "");
+                                    const price = priceText ? parseFloat(priceText) : null;
+
+                                    // Update the price and currency separately
+                                    handleCellChange(property.id, "price", price);
+                                    handlePropertyChange(property.id, "price", price);
+
+                                    handleCellChange(property.id, "currency", currency);
+                                    handlePropertyChange(property.id, "currency", currency);
+                                  }
                                 }}
                                 autoFocus
                                 onBlur={() => toggleEditMode(property.id, "price")}
@@ -672,7 +763,7 @@ export default function TagsPage() {
                                 }}
                               />
                             ) : (
-                              <span>{property.price ? `${property.currency} ${property.price}` : "-"}</span>
+                              <span>{property.price ? `${property.currency} ${Number(property.price).toLocaleString()}` : "-"}</span>
                             )}
                           </TableCell>
                           <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "availability")}>
@@ -746,29 +837,6 @@ export default function TagsPage() {
                               <div>{property.excluded_by ? <span>{property.excluded_by}</span> : "-"}</div>
                             )}
                           </TableCell>
-                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "tab")}>
-                            {isEditing(property.id, "tab") ? (
-                              <Select
-                                value={getPropertyValue(property, "tab") || "DATA"}
-                                onValueChange={(value) => {
-                                  handleCellChange(property.id, "tab", value);
-                                  handlePropertyChange(property.id, "tab", value);
-                                }}
-                                open={true}
-                              >
-                                <SelectTrigger className="h-7 text-xs w-full">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="DATA">DATA</SelectItem>
-                                  <SelectItem value="LUXURY LISTINGS">LUXURY LISTINGS</SelectItem>
-                                  <SelectItem value="ALL LAND">ALL LAND</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <span>{property.tab || "-"}</span>
-                            )}
-                          </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end space-x-1">
                               {hasChanges(property.id) ? (
@@ -836,24 +904,52 @@ export default function TagsPage() {
                   </Table>
                 </div>
 
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between mt-4">
-                    <div className="text-sm text-muted-foreground">
-                      Showing {tagDetails.length} of {totalResults} results
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1 || isTagDetailsLoading}>
-                        Previous
-                      </Button>
-                      <div className="text-sm">
-                        Page {currentPage} of {totalPages}
-                      </div>
-                      <Button variant="outline" size="sm" onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages || isTagDetailsLoading}>
-                        Next
-                      </Button>
-                    </div>
+                <div className="flex items-center justify-between mt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {tagDetails.length} of {totalResults} results
                   </div>
-                )}
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      className="bg-emerald-500 hover:bg-emerald-600"
+                      variant="default"
+                      size="sm"
+                      onClick={() => handleSolveAll(selectedTag?.id)}
+                      disabled={isTagDetailsLoading || tagDetails.length === 0 || Object.keys(savingRows).length > 0}
+                    >
+                      {Object.keys(savingRows).length > 0 ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        "Solve All"
+                      )}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleIgnoreAll(selectedTag?.id)} disabled={isTagDetailsLoading || tagDetails.length === 0 || Object.keys(savingRows).length > 0}>
+                      {Object.keys(savingRows).length > 0 ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        "Ignore All"
+                      )}
+                    </Button>
+                    {totalPages > 1 && (
+                      <>
+                        <Button variant="outline" size="sm" onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1 || isTagDetailsLoading}>
+                          Previous
+                        </Button>
+                        <div className="text-sm">
+                          Page {currentPage} of {totalPages}
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages || isTagDetailsLoading}>
+                          Next
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </>
             )}
           </div>
