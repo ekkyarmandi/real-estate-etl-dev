@@ -1,314 +1,904 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Badge } from "@/components/ui/badge"; // Assuming you have Shadcn UI Badge component
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-
-// Helper to format date to YYYY-MM
-const formatDateToMonthYear = (date) => {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-  return `${year}-${month}-01`;
-};
-
-// Get current and previous month dates
-const getCurrentAndPreviousMonth = () => {
-  const currentDate = new Date();
-  const previousMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
-  return {
-    current: formatDateToMonthYear(currentDate),
-    previous: formatDateToMonthYear(previousMonth),
-  };
-};
-
-async function getTagsSummary(date) {
-  try {
-    const res = await fetch(`http://localhost:8000/tags/?date=${date}`, { cache: "no-store" });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: "Failed to fetch tags summary" }));
-      throw new Error(errorData.detail || "Failed to fetch tags summary");
-    }
-    return res.json();
-  } catch (error) {
-    console.error("Error fetching tags summary:", error);
-    throw error; // Re-throw to be caught by component
-  }
-}
-
-async function getTagDetails(tagName, date, page = 1, size = 10) {
-  // Default size 10
-  try {
-    const res = await fetch(`http://localhost:8000/tags/${encodeURIComponent(tagName)}?date=${date}&page=${page}&size=${size}`, {
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: "Failed to fetch tag details" }));
-      throw new Error(errorData.detail || "Failed to fetch tag details");
-    }
-    return res.json();
-  } catch (error) {
-    console.error("Error fetching tag details:", error);
-    throw error;
-  }
-}
-
-async function updateTagStatus(tagId, statusUpdate) {
-  try {
-    const res = await fetch(`http://localhost:8000/tags/${tagId}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(statusUpdate),
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: "Failed to update tag status" }));
-      throw new Error(errorData.detail || "Failed to update tag status");
-    }
-    return res.json();
-  } catch (error) {
-    console.error("Error updating tag status:", error);
-    throw error;
-  }
-}
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon, ExternalLink, Check, X, Loader2 } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 
 export default function TagsPage() {
-  const { current, previous } = getCurrentAndPreviousMonth();
-  const [date, setDate] = useState(current);
-  const [tagsSummary, setTagsSummary] = useState({});
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const tagsEndpoint = `${baseUrl}/tags`;
+
+  const [date, setDate] = useState();
+  const [tags, setTags] = useState([]);
   const [selectedTag, setSelectedTag] = useState(null);
-  const [tagDetails, setTagDetails] = useState({ items: [], total: 0, page: 1, size: 10, pages: 0 });
-  const [isLoadingSummary, setIsLoadingSummary] = useState(true);
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
-  const [summaryError, setSummaryError] = useState(null);
-  const [detailsError, setDetailsError] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isTagDetailsLoading, setIsTagDetailsLoading] = useState(false);
+  const [tagDetails, setTagDetails] = useState([]);
+  const [totalResults, setTotalResults] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
-  // Fetch Summary
-  useEffect(() => {
-    async function loadTagsSummary() {
-      setIsLoadingSummary(true);
-      setSummaryError(null);
-      setTagsSummary({}); // Clear previous summary
-      setSelectedTag(null); // Clear selected tag when date changes
-      setTagDetails({ items: [], total: 0, page: 1, size: 10, pages: 0 }); // Clear details
-      try {
-        const fetchedTags = await getTagsSummary(date);
-        setTagsSummary(fetchedTags);
-      } catch (err) {
-        setSummaryError(err.message);
-        toast.error(`Error loading tags summary: ${err.message}`);
-      } finally {
-        setIsLoadingSummary(false);
+  // Add new state for edited properties
+  const [editedProperties, setEditedProperties] = useState({});
+
+  // Add new state for cells being edited
+  const [editingCells, setEditingCells] = useState({});
+
+  // Add loading state for specific rows
+  const [savingRows, setSavingRows] = useState({});
+
+  // Toggle edit mode for a cell
+  const toggleEditMode = useCallback((propertyId, field) => {
+    setEditingCells((prev) => {
+      const key = `${propertyId}-${field}`;
+      const newState = { ...prev };
+
+      // If already editing this cell, cancel editing
+      if (newState[key]) {
+        delete newState[key];
+      } else {
+        // Start editing this cell
+        newState[key] = true;
       }
-    }
-    loadTagsSummary();
-  }, [date]);
 
-  // Fetch Details when selectedTag or page changes
-  const loadTagDetails = useCallback(
-    async (pageToLoad = 1) => {
-      if (!selectedTag) return;
+      return newState;
+    });
+  }, []);
 
-      setIsLoadingDetails(true);
-      setDetailsError(null);
-      try {
-        const fetchedDetails = await getTagDetails(selectedTag, date, pageToLoad, tagDetails.size);
-        setTagDetails(fetchedDetails);
-      } catch (err) {
-        setDetailsError(err.message);
-        toast.error(`Error loading details for ${selectedTag}: ${err.message}`);
-      } finally {
-        setIsLoadingDetails(false);
-      }
+  // Check if a cell is in edit mode
+  const isEditing = useCallback(
+    (propertyId, field) => {
+      const key = `${propertyId}-${field}`;
+      return !!editingCells[key];
     },
-    [selectedTag, date, tagDetails.size]
+    [editingCells]
   );
 
+  // Fetch tag details
+  const fetchTagDetails = useCallback(
+    async (page = 1) => {
+      if (!selectedTag) return;
+
+      setIsTagDetailsLoading(true);
+
+      try {
+        // Build URL with tag ID, date filter, and pagination
+        let url = `${tagsEndpoint}/${selectedTag.id}`;
+
+        // Create URL parameters
+        const params = new URLSearchParams();
+
+        // Add date if available
+        if (date) {
+          params.append("date", format(date, "yyyy-MM-dd"));
+        }
+
+        // Add pagination
+        params.append("page", page.toString());
+
+        // Append parameters to URL
+        url += `?${params.toString()}`;
+
+        console.log("Fetching tag details from:", url);
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: Failed to fetch tag details`);
+        }
+
+        const data = await response.json();
+        console.log("Tag details data:", data);
+
+        setTagDetails(data.data || []);
+        setTotalResults(data.total || 0);
+        setCurrentPage(page);
+      } catch (error) {
+        console.error("Error fetching tag details:", error);
+        toast.error(`Failed to load tag details: ${error.message}`);
+        setTagDetails([]);
+        setTotalResults(0);
+      } finally {
+        setIsTagDetailsLoading(false);
+      }
+    },
+    [selectedTag, date, tagsEndpoint]
+  );
+
+  // Fetch tags list with optional date filter
+  const fetchTagsList = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // Construct URL with date parameter if available
+      let url = tagsEndpoint;
+      if (date) {
+        const formattedDate = format(date, "yyyy-MM-dd");
+        url += `?date=${formattedDate}`;
+      }
+
+      console.log("Fetching tags list from:", url);
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: Failed to fetch tags`);
+      }
+      const data = await response.json();
+      setTags(data.tags || []);
+    } catch (error) {
+      console.error("Error fetching tags:", error);
+      toast.error("Failed to load tags");
+      setTags([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [tagsEndpoint, date]);
+
+  // Handle date change
+  const handleDateChange = useCallback((newDate) => {
+    setDate(newDate);
+    // Reset selected tag when date changes
+    setSelectedTag(null);
+    setTagDetails([]);
+    setTotalResults(0);
+    setTotalPages(1);
+  }, []);
+
+  // Load tags on initial mount and when date changes
+  useEffect(() => {
+    fetchTagsList();
+  }, [fetchTagsList]);
+
+  // Fetch tag details when tag selection changes
   useEffect(() => {
     if (selectedTag) {
-      loadTagDetails(1); // Load first page when tag selection changes
+      fetchTagDetails(1);
     }
-  }, [selectedTag, loadTagDetails]);
+  }, [selectedTag, fetchTagDetails]);
 
-  const handleTagClick = (tagName) => {
-    if (selectedTag === tagName) {
-      setSelectedTag(null); // Deselect if clicked again
-      setTagDetails({ items: [], total: 0, page: 1, size: 10, pages: 0 });
-    } else {
-      setSelectedTag(tagName);
-      // Details will be loaded by the useEffect watching selectedTag
-    }
-  };
+  // Handle tag selection
+  const handleTagClick = useCallback(
+    (tag) => {
+      if (selectedTag && selectedTag.id === tag.id) {
+        setSelectedTag(null);
+        setTagDetails([]);
+        setTotalResults(0);
+      } else {
+        setSelectedTag(tag);
+      }
+    },
+    [selectedTag]
+  );
 
-  const handleUpdateStatus = async (tagId, statusUpdate, actionName) => {
-    // Find the tag to be updated and store its index
-    const tagIndex = tagDetails.items.findIndex((item) => item.id === tagId);
-    if (tagIndex === -1) return;
+  // Handle page change
+  const handlePageChange = useCallback(
+    (newPage) => {
+      if (newPage >= 1 && newPage <= totalPages) {
+        fetchTagDetails(newPage);
+      }
+    },
+    [fetchTagDetails, totalPages]
+  );
 
-    // Create a copy of the current items for optimistic updates
-    const updatedItems = [...tagDetails.items];
+  // Handle property field change
+  const handlePropertyChange = useCallback((propertyId, field, value) => {
+    setEditedProperties((prev) => ({
+      ...prev,
+      [propertyId]: {
+        ...(prev[propertyId] || {}),
+        [field]: value,
+      },
+    }));
+  }, []);
 
-    // Remove the item immediately (optimistic update)
-    updatedItems.splice(tagIndex, 1);
+  // Get value for a property field, with edited value taking precedence
+  const getPropertyValue = useCallback(
+    (property, field) => {
+      if (editedProperties[property.id] && editedProperties[property.id][field] !== undefined) {
+        return editedProperties[property.id][field];
+      }
+      return property[field];
+    },
+    [editedProperties]
+  );
 
-    // Update the UI immediately
-    setTagDetails({
-      ...tagDetails,
-      items: updatedItems,
-      total: tagDetails.total - 1,
-    });
+  // Handle cell value change and immediate update
+  const handleCellChange = useCallback((propertyId, field, value) => {
+    // Update the edited properties state
+    setEditedProperties((prev) => ({
+      ...prev,
+      [propertyId]: {
+        ...(prev[propertyId] || {}),
+        [field]: value,
+      },
+    }));
 
-    try {
-      // Make the API call in the background
-      const result = await updateTagStatus(tagId, statusUpdate);
+    // Update the tagDetails to immediately reflect the change in the UI
+    setTagDetails((prevDetails) => prevDetails.map((property) => (property.id === propertyId ? { ...property, [field]: value } : property)));
+  }, []);
 
-      // Show success toast
-      toast.success(result.message || `Tag ${actionName}d successfully.`);
+  // Handle solving or ignoring an issue
+  const handleMarkIssue = useCallback(
+    async (propertyId, tagName, mode) => {
+      setSavingRows((prev) => ({ ...prev, [propertyId]: true }));
 
-      // Update tag summary in the background without waiting
-      getTagsSummary(date)
-        .then((updatedSummary) => {
-          setTagsSummary(updatedSummary);
-        })
-        .catch((err) => {
-          console.error("Error updating summary counts:", err);
+      try {
+        // The API expects query parameters, not JSON body
+        const url = new URL(`${baseUrl}/tags/${propertyId}/mark-as-solved`);
+        url.searchParams.append("tag", tagName);
+        url.searchParams.append("mode", mode);
+
+        console.log("Making request to:", url.toString());
+
+        const response = await fetch(url.toString(), {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
         });
 
-      // If current page is empty but there are more pages, load the previous page
-      if (updatedItems.length === 0 && tagDetails.page > 1 && tagDetails.pages > 1) {
-        loadTagDetails(tagDetails.page - 1);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Error ${response.status}: ${errorData.detail || `Failed to mark issue as ${mode}`}`);
+        }
+
+        const result = await response.json();
+        toast.success(result.message || `Issue marked as ${mode} successfully`);
+
+        // Update the UI without triggering a full refresh
+        // Remove the property from the current display
+        setTagDetails((prevDetails) => prevDetails.filter((p) => p.id !== propertyId));
+
+        // Update the tag count in the tag list
+        if (selectedTag) {
+          setTags((prevTags) => prevTags.map((tag) => (tag.id === selectedTag.id ? { ...tag, count: Math.max(0, tag.count - 1) } : tag)));
+
+          // Update total results
+          setTotalResults((prev) => Math.max(0, prev - 1));
+        }
+      } catch (error) {
+        console.error(`Error marking issue as ${mode}:`, error);
+        toast.error(`Failed to mark issue as ${mode}: ${error.message}`);
+      } finally {
+        setSavingRows((prev) => {
+          const newState = { ...prev };
+          delete newState[propertyId];
+          return newState;
+        });
       }
-    } catch (err) {
-      // If the API call fails, revert the optimistic update and show error
-      toast.error(`Failed to ${actionName} tag: ${err.message}`);
+    },
+    [baseUrl, selectedTag]
+  );
 
-      // Reload the current page data to ensure UI is in sync with server
-      loadTagDetails(tagDetails.page);
-    }
-  };
+  // Handle solving issue - convenience wrapper for handleMarkIssue with mode=solved
+  const handleSolveIssue = useCallback(
+    (propertyId, tagName) => {
+      handleMarkIssue(propertyId, tagName, "solved");
+    },
+    [handleMarkIssue]
+  );
 
-  const handlePageChange = (newPage) => {
-    if (newPage >= 1 && newPage <= tagDetails.pages) {
-      loadTagDetails(newPage);
-    }
-  };
+  // Handle ignoring issue - convenience wrapper for handleMarkIssue with mode=ignored
+  const handleIgnoreIssue = useCallback(
+    (propertyId, tagName) => {
+      handleMarkIssue(propertyId, tagName, "ignored");
+    },
+    [handleMarkIssue]
+  );
 
-  // Format date for display
-  const formatMonthYearForDisplay = (dateStr) => {
-    if (!dateStr) return "";
-    const date = new Date(dateStr);
-    return date.toLocaleString("default", { month: "long", year: "numeric" });
-  };
+  // Handle save button click
+  const handleSave = useCallback(
+    async (propertyId) => {
+      if (!editedProperties[propertyId]) return;
+
+      setSavingRows((prev) => ({ ...prev, [propertyId]: true }));
+
+      try {
+        // Send PUT request to update the property
+        const response = await fetch(`${baseUrl}/tags/${propertyId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(editedProperties[propertyId]),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: Failed to update property`);
+        }
+
+        const result = await response.json();
+        toast.success(result.message || "Property updated successfully");
+
+        // The changes are already applied to the UI through handleCellChange
+        // Clear edited properties for this property
+        setEditedProperties((prev) => {
+          const newState = { ...prev };
+          delete newState[propertyId];
+          return newState;
+        });
+
+        // Clear editing cells
+        setEditingCells({});
+
+        // No need to refresh data as we've already updated the UI
+        // This prevents the fetchTagsList from being triggered
+      } catch (error) {
+        console.error("Error updating property:", error);
+        toast.error(`Failed to update property: ${error.message}`);
+      } finally {
+        setSavingRows((prev) => {
+          const newState = { ...prev };
+          delete newState[propertyId];
+          return newState;
+        });
+      }
+    },
+    [editedProperties, baseUrl]
+  );
+
+  // Determine if a property has unsaved changes
+  const hasChanges = useCallback(
+    (propertyId) => {
+      return !!editedProperties[propertyId];
+    },
+    [editedProperties]
+  );
 
   return (
-    <div className="container mx-auto p-4 space-y-6 md:space-y-10">
-      <h1 className="text-2xl font-bold mb-6 md:mb-8">Data Quality Tags</h1>
-
-      {/* Filter Section */}
-      <div className="p-4 md:p-6 border rounded-md bg-card text-card-foreground shadow-sm mb-4">
-        <h2 className="text-lg font-semibold mb-4">Filters</h2>
-        <div className="flex gap-4">
-          <div className="flex flex-col gap-2">
-            <label htmlFor="date" className="text-sm font-medium">
-              Month
-            </label>
-            <select id="date" className="px-3 py-2 border rounded-md bg-background" value={date} onChange={(e) => setDate(e.target.value)} disabled={isLoadingSummary || isLoadingDetails}>
-              <option value={current}>{formatMonthYearForDisplay(current)}</option>
-              <option value={previous}>{formatMonthYearForDisplay(previous)}</option>
-            </select>
+    <div className="p-4 md:p-6">
+      <h1 className="text-2xl font-bold mb-6 md:mb-8">Data Quality Control</h1>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 p-4 border rounded-md">
+          <div>
+            <p className="text-md font-medium mb-2">Filter by Date</p>
+            <div className="flex gap-2 items-center">
+              <DatePicker date={date} setDate={handleDateChange} />
+            </div>
+          </div>
+          <div>
+            <p className="text-md font-medium mb-2">Tags</p>
+            <div className="flex gap-2 flex-wrap">
+              {isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading...</p>
+              ) : tags.length > 0 ? (
+                tags.map((tag) => (
+                  <Badge key={tag.id} className="hover:bg-muted cursor-pointer" variant={selectedTag && selectedTag.id === tag.id ? "default" : "outline"} onClick={() => handleTagClick(tag)}>
+                    {tag.name} ({tag.count})
+                  </Badge>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No tags found</p>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Tags Summary Section */}
-      <div className="p-4 md:p-6 border rounded-md bg-card text-card-foreground shadow-sm mb-4">
-        <h2 className="text-lg font-semibold mb-4 md:mb-6">Tags Summary</h2>
-        {isLoadingSummary && <p>Loading tags summary...</p>}
-        {summaryError && <p className="text-red-500">Error loading summary: {summaryError}</p>}
-        {!isLoadingSummary && !summaryError && (
-          <div className="flex flex-wrap gap-2 md:gap-3">
-            {Object.entries(tagsSummary).map(([tagName, count]) => (
-              <Badge key={tagName} variant={selectedTag === tagName ? "default" : "secondary"} onClick={() => handleTagClick(tagName)} className="cursor-pointer hover:scale-105 transition-all py-1.5 px-3 text-sm">
-                {tagName.replace(/_/g, " ")} ({count})
-              </Badge>
-            ))}
+        {selectedTag && (
+          <div className="flex flex-col gap-4 p-4 border rounded-md">
+            <h3 className="text-lg font-medium">Properties with {selectedTag.name} issue</h3>
+
+            {isTagDetailsLoading ? (
+              <div className="py-8 text-center">
+                <p className="text-muted-foreground animate-pulse">Loading properties...</p>
+              </div>
+            ) : tagDetails.length === 0 ? (
+              <div className="py-8 text-center">
+                <p className="text-muted-foreground">No properties found with this issue.</p>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="text-xs">
+                        <TableHead className="whitespace-nowrap">Source</TableHead>
+                        <TableHead className="whitespace-nowrap">Title</TableHead>
+                        <TableHead className="whitespace-nowrap">Description</TableHead>
+                        <TableHead className="whitespace-nowrap">Region</TableHead>
+                        <TableHead className="whitespace-nowrap">Location</TableHead>
+                        <TableHead className="whitespace-nowrap">Leasehold Years</TableHead>
+                        <TableHead className="whitespace-nowrap">Contract Type</TableHead>
+                        <TableHead className="whitespace-nowrap">Property Type</TableHead>
+                        <TableHead className="whitespace-nowrap">Bedrooms</TableHead>
+                        <TableHead className="whitespace-nowrap">Bathrooms</TableHead>
+                        <TableHead className="whitespace-nowrap">Build Size</TableHead>
+                        <TableHead className="whitespace-nowrap">Price</TableHead>
+                        <TableHead className="whitespace-nowrap">Availability</TableHead>
+                        <TableHead className="whitespace-nowrap">Sold At</TableHead>
+                        <TableHead className="whitespace-nowrap">Excluded</TableHead>
+                        <TableHead className="whitespace-nowrap">Excluded By</TableHead>
+                        <TableHead className="whitespace-nowrap">Tab</TableHead>
+                        <TableHead className="whitespace-nowrap text-right">Actions</TableHead>
+                        <TableHead className="whitespace-nowrap text-right">Issue</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="text-xs">
+                      {tagDetails.map((property, index) => (
+                        <TableRow key={index}>
+                          <TableCell className="font-medium">
+                            <a href={property.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                              <span>{property.source}</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </TableCell>
+                          <TableCell className="max-w-[150px] truncate cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "title")}>
+                            {isEditing(property.id, "title") ? (
+                              <Input
+                                className="h-7 text-xs w-full"
+                                value={getPropertyValue(property, "title") || ""}
+                                onChange={(e) => {
+                                  handleCellChange(property.id, "title", e.target.value);
+                                  handlePropertyChange(property.id, "title", e.target.value);
+                                }}
+                                autoFocus
+                                onBlur={() => toggleEditMode(property.id, "title")}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    toggleEditMode(property.id, "title");
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{property.title || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-[200px] truncate cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "description")}>
+                            {isEditing(property.id, "description") ? (
+                              <Input
+                                className="h-7 text-xs w-full"
+                                value={getPropertyValue(property, "description") || ""}
+                                onChange={(e) => {
+                                  handleCellChange(property.id, "description", e.target.value);
+                                  handlePropertyChange(property.id, "description", e.target.value);
+                                }}
+                                autoFocus
+                                onBlur={() => toggleEditMode(property.id, "description")}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    toggleEditMode(property.id, "description");
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{property.description || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "region")}>
+                            {isEditing(property.id, "region") ? (
+                              <Input
+                                className="h-7 text-xs w-full"
+                                value={getPropertyValue(property, "region") || ""}
+                                onChange={(e) => {
+                                  handleCellChange(property.id, "region", e.target.value);
+                                  handlePropertyChange(property.id, "region", e.target.value);
+                                }}
+                                autoFocus
+                                onBlur={() => toggleEditMode(property.id, "region")}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    toggleEditMode(property.id, "region");
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{property.region || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "location")}>
+                            {isEditing(property.id, "location") ? (
+                              <Input
+                                className="h-7 text-xs w-full"
+                                value={getPropertyValue(property, "location") || ""}
+                                onChange={(e) => {
+                                  handleCellChange(property.id, "location", e.target.value);
+                                  handlePropertyChange(property.id, "location", e.target.value);
+                                }}
+                                autoFocus
+                                onBlur={() => toggleEditMode(property.id, "location")}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    toggleEditMode(property.id, "location");
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{property.location || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "leasehold_years")}>
+                            {isEditing(property.id, "leasehold_years") ? (
+                              <Input
+                                className="h-7 text-xs w-full"
+                                type="number"
+                                value={getPropertyValue(property, "leasehold_years") || ""}
+                                onChange={(e) => {
+                                  handleCellChange(property.id, "leasehold_years", parseFloat(e.target.value) || null);
+                                  handlePropertyChange(property.id, "leasehold_years", parseFloat(e.target.value) || null);
+                                }}
+                                autoFocus
+                                onBlur={() => toggleEditMode(property.id, "leasehold_years")}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    toggleEditMode(property.id, "leasehold_years");
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{property.leasehold_years || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "contract_type")}>
+                            {isEditing(property.id, "contract_type") ? (
+                              <Select
+                                value={getPropertyValue(property, "contract_type") || ""}
+                                onValueChange={(value) => {
+                                  handleCellChange(property.id, "contract_type", value);
+                                  handlePropertyChange(property.id, "contract_type", value);
+                                }}
+                                open={true}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-full">
+                                  <SelectValue placeholder="Select type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Freehold">Freehold</SelectItem>
+                                  <SelectItem value="Leasehold">Leasehold</SelectItem>
+                                  <SelectItem value="Rental">Rental</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span>{property.contract_type || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "property_type")}>
+                            {isEditing(property.id, "property_type") ? (
+                              <Select
+                                value={getPropertyValue(property, "property_type") || ""}
+                                onValueChange={(value) => {
+                                  handleCellChange(property.id, "property_type", value);
+                                  handlePropertyChange(property.id, "property_type", value);
+                                }}
+                                open={true}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-full">
+                                  <SelectValue placeholder="Select type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Villa">Villa</SelectItem>
+                                  <SelectItem value="House">House</SelectItem>
+                                  <SelectItem value="Land">Land</SelectItem>
+                                  <SelectItem value="Apartment">Apartment</SelectItem>
+                                  <SelectItem value="Hotel">Hotel</SelectItem>
+                                  <SelectItem value="Townhouse">Townhouse</SelectItem>
+                                  <SelectItem value="Commercial">Commercial</SelectItem>
+                                  <SelectItem value="Loft">Loft</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span>{property.property_type || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "bedrooms")}>
+                            {isEditing(property.id, "bedrooms") ? (
+                              <Input
+                                className="h-7 text-xs w-full"
+                                type="number"
+                                value={getPropertyValue(property, "bedrooms") || ""}
+                                onChange={(e) => {
+                                  handleCellChange(property.id, "bedrooms", parseFloat(e.target.value) || null);
+                                  handlePropertyChange(property.id, "bedrooms", parseFloat(e.target.value) || null);
+                                }}
+                                autoFocus
+                                onBlur={() => toggleEditMode(property.id, "bedrooms")}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    toggleEditMode(property.id, "bedrooms");
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{property.bedrooms || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "bathrooms")}>
+                            {isEditing(property.id, "bathrooms") ? (
+                              <Input
+                                className="h-7 text-xs w-full"
+                                type="number"
+                                value={getPropertyValue(property, "bathrooms") || ""}
+                                onChange={(e) => {
+                                  handleCellChange(property.id, "bathrooms", parseFloat(e.target.value) || null);
+                                  handlePropertyChange(property.id, "bathrooms", parseFloat(e.target.value) || null);
+                                }}
+                                autoFocus
+                                onBlur={() => toggleEditMode(property.id, "bathrooms")}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    toggleEditMode(property.id, "bathrooms");
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{property.bathrooms || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "build_size")}>
+                            {isEditing(property.id, "build_size") ? (
+                              <Input
+                                className="h-7 text-xs w-full"
+                                type="number"
+                                value={getPropertyValue(property, "build_size") || ""}
+                                onChange={(e) => {
+                                  handleCellChange(property.id, "build_size", parseFloat(e.target.value) || null);
+                                  handlePropertyChange(property.id, "build_size", parseFloat(e.target.value) || null);
+                                }}
+                                autoFocus
+                                onBlur={() => toggleEditMode(property.id, "build_size")}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    toggleEditMode(property.id, "build_size");
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{property.build_size || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "price")}>
+                            {isEditing(property.id, "price") ? (
+                              <Input
+                                className="h-7 text-xs w-full"
+                                value={`${getPropertyValue(property, "currency") || property.currency} ${getPropertyValue(property, "price") || property.price}`.trim()}
+                                onChange={(e) => {
+                                  handleCellChange(property.id, "price_display", e.target.value);
+                                }}
+                                autoFocus
+                                onBlur={() => toggleEditMode(property.id, "price")}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    toggleEditMode(property.id, "price");
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{property.price ? `${property.currency} ${property.price.toLocaleString()}` : "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "availability")}>
+                            {isEditing(property.id, "availability") ? (
+                              <Select
+                                value={getPropertyValue(property, "availability") || "Available"}
+                                onValueChange={(value) => {
+                                  handleCellChange(property.id, "availability", value);
+                                  handlePropertyChange(property.id, "availability", value);
+                                }}
+                                open={true}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Available">Available</SelectItem>
+                                  <SelectItem value="Sold">Sold</SelectItem>
+                                  <SelectItem value="Delisted">Delisted</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge variant={property.is_available ? "success" : "destructive"}>{property.availability || (property.is_available ? "Available" : "Not Available")}</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "sold_at")}>
+                            {isEditing(property.id, "sold_at") ? (
+                              <Popover open={true} onOpenChange={() => toggleEditMode(property.id, "sold_at")}>
+                                <PopoverTrigger asChild>
+                                  <Button variant={"outline"} className="h-7 w-full text-xs justify-start font-normal">
+                                    {getPropertyValue(property, "sold_at") ? new Date(getPropertyValue(property, "sold_at")).toLocaleDateString() : "Not sold"}
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <Calendar
+                                    mode="single"
+                                    selected={getPropertyValue(property, "sold_at") ? new Date(getPropertyValue(property, "sold_at")) : undefined}
+                                    onSelect={(date) => {
+                                      handleCellChange(property.id, "sold_at", date?.toISOString() || null);
+                                      handlePropertyChange(property.id, "sold_at", date?.toISOString() || null);
+                                    }}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            ) : (
+                              <span>{property.sold_at ? new Date(property.sold_at).toLocaleDateString() : "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "is_excluded")}>
+                            {isEditing(property.id, "is_excluded") ? (
+                              <div className="flex items-center space-x-2">
+                                <Switch
+                                  checked={getPropertyValue(property, "is_excluded") || false}
+                                  onCheckedChange={(checked) => {
+                                    handleCellChange(property.id, "is_excluded", checked);
+                                    handlePropertyChange(property.id, "is_excluded", checked);
+                                  }}
+                                />
+                              </div>
+                            ) : property.is_excluded ? (
+                              <Badge variant="destructive">Yes</Badge>
+                            ) : (
+                              <Badge variant="outline">No</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "excluded_by")}>
+                            {isEditing(property.id, "excluded_by") ? (
+                              <Input
+                                className="h-7 text-xs w-full"
+                                value={getPropertyValue(property, "excluded_by") || ""}
+                                onChange={(e) => {
+                                  handleCellChange(property.id, "excluded_by", e.target.value);
+                                  handlePropertyChange(property.id, "excluded_by", e.target.value);
+                                }}
+                                autoFocus
+                                onBlur={() => toggleEditMode(property.id, "excluded_by")}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    toggleEditMode(property.id, "excluded_by");
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{property.excluded_by || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="cursor-pointer hover:bg-muted/50" onClick={() => toggleEditMode(property.id, "tab")}>
+                            {isEditing(property.id, "tab") ? (
+                              <Select
+                                value={getPropertyValue(property, "tab") || "DATA"}
+                                onValueChange={(value) => {
+                                  handleCellChange(property.id, "tab", value);
+                                  handlePropertyChange(property.id, "tab", value);
+                                }}
+                                open={true}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="DATA">DATA</SelectItem>
+                                  <SelectItem value="LUXURY LISTINGS">LUXURY LISTINGS</SelectItem>
+                                  <SelectItem value="ALL LAND">ALL LAND</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span>{property.tab || "-"}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end space-x-1">
+                              {hasChanges(property.id) ? (
+                                <>
+                                  {savingRows[property.id] ? (
+                                    <Button size="sm" variant="outline" className="h-7 w-7 p-0" disabled>
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    </Button>
+                                  ) : (
+                                    <>
+                                      <Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={() => handleSave(property.id)}>
+                                        <Check className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 w-7 p-0"
+                                        onClick={() => {
+                                          // Revert changes in UI
+                                          setTagDetails((prevDetails) => [...prevDetails]);
+                                          // Clear edited properties
+                                          setEditedProperties((prev) => {
+                                            const newState = { ...prev };
+                                            delete newState[property.id];
+                                            return newState;
+                                          });
+                                        }}
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    </>
+                                  )}
+                                </>
+                              ) : (
+                                <Button size="sm" variant="outline" className="h-7" disabled>
+                                  No changes
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end space-x-1">
+                              {savingRows[property.id] ? (
+                                <>
+                                  <Button size="sm" className="bg-emerald-500 hover:bg-emerald-600 h-7" disabled>
+                                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                    Processing...
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <Button size="sm" className="bg-emerald-500 hover:bg-emerald-600 h-7" onClick={() => handleSolveIssue(property.id, selectedTag?.id)}>
+                                    Solve
+                                  </Button>
+                                  <Button size="sm" variant="outline" className="h-7" onClick={() => handleIgnoreIssue(property.id, selectedTag?.id)}>
+                                    Ignore
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {tagDetails.length} of {totalResults} results
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button variant="outline" size="sm" onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1 || isTagDetailsLoading}>
+                        Previous
+                      </Button>
+                      <div className="text-sm">
+                        Page {currentPage} of {totalPages}
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages || isTagDetailsLoading}>
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
-        {!isLoadingSummary && !summaryError && Object.keys(tagsSummary).length === 0 && <p className="text-muted-foreground">No tags found for {formatMonthYearForDisplay(date)}.</p>}
       </div>
+    </div>
+  );
+}
 
-      {/* Listing Table Section */}
-      {selectedTag && (
-        <div className="p-4 md:p-6 border rounded-md bg-card text-card-foreground shadow-sm min-h-[300px]">
-          <h2 className="text-lg font-semibold mb-4">
-            Listings for: <span className="font-medium text-primary">{selectedTag.replace(/_/g, " ")}</span>
-          </h2>
-          {isLoadingDetails && <p>Loading details...</p>}
-          {detailsError && <p className="text-red-500">Error loading details: {detailsError}</p>}
-          {!isLoadingDetails && !detailsError && (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[20%]">Source</TableHead>
-                    <TableHead>Link</TableHead>
-                    <TableHead className="text-right w-[180px]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {tagDetails.items.length > 0 ? (
-                    tagDetails.items.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.property.source}</TableCell>
-                        <TableCell>
-                          <a href={item.property.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate block max-w-xs md:max-w-md lg:max-w-lg">
-                            {item.property.url}
-                          </a>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex gap-2 justify-end">
-                            <Button variant="outline" size="sm" onClick={() => handleUpdateStatus(item.id, { is_solved: true }, "solve")}>
-                              Solved
-                            </Button>
-                            <Button variant="secondary" size="sm" onClick={() => handleUpdateStatus(item.id, { is_ignored: true }, "ignore")}>
-                              Ignore
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
-                        No listings found for this tag in {formatMonthYearForDisplay(date)}.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+function DatePicker({ date, setDate }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant={"outline"} className={cn("w-[230px] justify-start text-left font-normal", !date && "text-muted-foreground")}>
+            <CalendarIcon className="mr-2 size-4" />
+            {date ? format(date, "PPP") : <span>Pick a date</span>}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar mode="single" selected={date} onSelect={setDate} disabled={(date) => date > new Date() || date < new Date("2024-01-01")} initialFocus />
+        </PopoverContent>
+      </Popover>
 
-              {/* Pagination Controls */}
-              {tagDetails.pages > 1 && (
-                <div className="flex items-center justify-between mt-6">
-                  <p className="text-sm text-muted-foreground">
-                    Page {tagDetails.page} of {tagDetails.pages} (Total: {tagDetails.total} items)
-                  </p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handlePageChange(tagDetails.page - 1)} disabled={tagDetails.page <= 1}>
-                      Previous
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handlePageChange(tagDetails.page + 1)} disabled={tagDetails.page >= tagDetails.pages}>
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-          {!isLoadingDetails && !detailsError && tagDetails.total === 0 && !selectedTag && <p className="text-muted-foreground">Click a tag above to see related listings.</p>}
-        </div>
+      {date && (
+        <Button variant="ghost" size="icon" onClick={() => setDate(undefined)} className="rounded-full h-8 w-8" title="Clear date filter">
+          <span className="sr-only">Clear date</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-x">
+            <path d="M18 6 6 18"></path>
+            <path d="m6 6 12 12"></path>
+          </svg>
+        </Button>
       )}
     </div>
   );

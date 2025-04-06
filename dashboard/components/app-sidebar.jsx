@@ -30,13 +30,7 @@ const data = {
       isActive: true,
     },
     {
-      title: "Logs",
-      url: "/logs",
-      icon: FileText,
-      isActive: false,
-    },
-    {
-      title: "Tags",
+      title: "Issues",
       url: "/tags",
       icon: Tag,
       isActive: false,

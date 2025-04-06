@@ -19,6 +19,7 @@ from routers import (
     analytics_routes,
     data_routes,
     queue_routes,
+    tag_routes,
 )
 
 app = FastAPI(
@@ -28,10 +29,13 @@ app = FastAPI(
 )
 
 # Include routers
-app.include_router(analytics_routes.router)
-# app.include_router(tags_routes.router)
-app.include_router(data_routes.router)
-app.include_router(queue_routes.router)
+for r in [
+    analytics_routes,
+    data_routes,
+    queue_routes,
+    tag_routes,
+]:
+    app.include_router(r.router)
 
 # Add CORS middleware
 app.add_middleware(
