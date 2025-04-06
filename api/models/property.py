@@ -15,7 +15,7 @@ from datetime import datetime
 from models.base import Base
 from models.tags import Tag
 from database import get_db
-from reid.settings import ZONING_COLORS, ZONING_CATEGORIES
+from vars import ZONING_COLORS, ZONING_CATEGORIES
 
 
 class Property(Base):

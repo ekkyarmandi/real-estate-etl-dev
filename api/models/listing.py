@@ -11,7 +11,7 @@ from sqlalchemy import (
 import uuid
 from datetime import datetime
 from models.base import Base
-from reid.settings import REID_CODE
+from vars import REID_CODE
 
 
 class Listing(Base):
