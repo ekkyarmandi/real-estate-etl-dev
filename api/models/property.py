@@ -5,8 +5,8 @@ from sqlalchemy import (
     TIMESTAMP,
     Float,
     Boolean,
-    ForeignKey,
     BigInteger,
+    Index,
 )
 from sqlalchemy.orm import relationship
 import uuid
@@ -49,6 +49,14 @@ class Property(Base):
     is_off_plan = Column(Boolean, default=False)
 
     tags = relationship("Tag", back_populates="property")
+
+    __table_args__ = (
+        Index("idx_property_url", "url"),
+        Index("idx_property_source", "source"),
+        Index("idx_property_created_at", "created_at"),
+        Index("idx_property_is_available", "is_available"),
+        Index("idx_property_availability", "availability"),
+    )
 
     def check_off_plan(self, labels: list = []) -> bool:
         labels.extend(

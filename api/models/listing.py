@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     BigInteger,
     text,
+    Index,
 )
 import uuid
 from datetime import datetime
@@ -50,6 +51,17 @@ class Listing(Base):
     is_excluded = Column(Boolean, default=False)
     excluded_by = Column(String, nullable=True)
     tab = Column(String, default="DATA")
+
+    __table_args__ = (
+        Index("idx_listing_url", "url", unique=True),
+        Index("idx_listing_source", "source"),
+        Index("idx_listing_reid_id", "reid_id"),
+        Index("idx_listing_created_at", "created_at"),
+        Index("idx_listing_updated_at", "updated_at"),
+        Index("idx_listing_is_available", "is_available"),
+        Index("idx_listing_availability", "availability"),
+        Index("idx_listing_tab", "tab"),
+    )
 
     def reid_id_generator(self, db):
         code = REID_CODE[self.source]
