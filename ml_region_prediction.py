@@ -141,14 +141,7 @@ def run_prediction_on_json():
 
 def run_prediction_on_cloud_db():
     cloud_db = next(get_cloud_db())
-    listings = (
-        cloud_db.query(Listing)
-        .filter(
-            Listing.location.isnot(None),
-            Listing.is_available,
-        )
-        .all()
-    )
+    listings = cloud_db.query(Listing).filter(Listing.location.isnot(None)).all()
     model = pickle.load(open("region_prediction_model.pkl", "rb"))
     for listing in track(listings, description="Predicting regions..."):
         location_text = listing.location
