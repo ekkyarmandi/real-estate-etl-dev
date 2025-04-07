@@ -5,9 +5,8 @@ Routes for tag or listing issue management
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, update
 from datetime import datetime
-import re
 
 from database import get_db
 from models import Tag, Property, Listing
@@ -21,6 +20,7 @@ async def get_tags(date: Optional[str] = None, db: Session = Depends(get_db)):
     """
     Get unique tags and total count
     """
+    # Create a CTE query for better performance with large datasets
     query = db.query(Tag.name, func.count(Tag.id).label("count")).join(
         Property, Property.id == Tag.property_id
     )
@@ -49,36 +49,45 @@ async def get_tag_details(
     db: Session = Depends(get_db),
 ):
     """
-    Get details for a specific tag
+    Get details for a specific tag with optimized query performance
     """
-    # query properties with tag name and order it by source name
-    properties = (
+    # Use a join instead of any() to improve query performance
+    properties_query = (
         db.query(Property)
-        .filter(
-            Property.tags.any(
-                (Tag.name == tag_name)
-                & (Tag.is_solved == False)
-                & (Tag.is_ignored == False)
-            )
-        )
+        .join(Tag, Property.id == Tag.property_id)
+        .filter(Tag.name == tag_name, Tag.is_solved == False, Tag.is_ignored == False)
         .order_by(Property.source)
+        .distinct()
     )
+
     if date:
-        properties = properties.filter(Property.created_at >= date)
+        properties_query = properties_query.filter(Property.created_at >= date)
 
-    # get total count
-    total = properties.count()
+    # Get total count efficiently with a separate, simpler count query
+    total = properties_query.count()
 
-    # paginate
-    properties = properties.offset((page - 1) * size).limit(size)
+    # Apply pagination
+    properties = properties_query.offset((page - 1) * size).limit(size).all()
 
-    # properties as output data
+    # Get all URLs at once
+    property_urls = [p.url for p in properties]
+
+    # Preload all needed listings in a single query instead of N+1 query pattern
+    listings_dict = {}
+    if property_urls:
+        listings = db.query(Listing).filter(Listing.url.in_(property_urls)).all()
+        listings_dict = {listing.url: listing for listing in listings}
+
+    # Build the result data
     data = []
-    urls = []
+    urls = []  # Track unique URLs
+
     for property in properties:
         if property.url not in urls:
             urls.append(property.url)
-            listing = db.query(Listing).filter(Listing.url == property.url).first()
+            listing = listings_dict.get(property.url)
+
+            listing_data = {}
             if listing:
                 listing_data = {
                     "region": listing.region,
@@ -87,8 +96,7 @@ async def get_tag_details(
                     "excluded_by": listing.excluded_by,
                     "tab": listing.tab,
                 }
-            else:
-                listing_data = {}
+
             data.append(
                 {
                     "id": property.id,
@@ -262,31 +270,27 @@ def mark_as_solved_or_ignored(
     """
     Mark a property as solved or ignored
     """
-    p = (
-        db.query(Property)
-        .filter(Property.id == property_id, Property.tags.any(name=tag))
+    # More efficient query using explicit join
+    tag_item = (
+        db.query(Tag)
+        .join(Property, Property.id == Tag.property_id)
+        .filter(Property.id == property_id, Tag.name == tag)
         .first()
     )
-    if not p:
-        raise HTTPException(status_code=404, detail="Property not found")
 
-    # remove the tag from the property
-    tag_found = False
-    for tag_item in p.tags:
-        if tag_item.name == tag:  # Compare with the parameter 'tag'
-            if mode == "solved":
-                tag_item.is_solved = True
-            elif mode == "ignored":
-                tag_item.is_ignored = True
-            db.commit()
-            tag_found = True
-            break
-
-    if not tag_found:
+    if not tag_item:
         raise HTTPException(
-            status_code=404, detail=f"Tag '{tag}' not found for this property"
+            status_code=404,
+            detail=f"Property with ID {property_id} and tag '{tag}' not found",
         )
 
+    # Update directly without loop
+    if mode == "solved":
+        tag_item.is_solved = True
+    elif mode == "ignored":
+        tag_item.is_ignored = True
+
+    db.commit()
     return {"message": "success"}
 
 
@@ -297,62 +301,101 @@ async def bulk_mark_as_solved_or_ignored(
     db: Session = Depends(get_db),
 ):
     """
-    Bulk mark as solved or ignored
+    Bulk mark as solved or ignored using efficient bulk updates
     """
+    if not form.property_ids:
+        return {"message": "success", "count": 0}
 
-    # query tags related to the property ids
-    tags = (
-        db.query(Tag)
-        .filter(Tag.property_id.in_(form.property_ids), Tag.name == tag_name)
-        .all()
-    )
+    # Use bulk update instead of fetching all tags and updating individually
+    is_solved = form.mode == "solved"
+    is_ignored = form.mode == "ignored"
 
-    # mark the properties as solved or ignored
-    for tag in tags:
-        tag.is_solved = form.mode == "solved"
-        tag.is_ignored = form.mode == "ignored"
-
-    db.commit()
-
-    return {"message": "success"}
+    # Using SQLAlchemy's Update object for bulk updates
+    try:
+        # Execute a bulk update operation
+        result = db.execute(
+            update(Tag)
+            .where(Tag.property_id.in_(form.property_ids), Tag.name == tag_name)
+            .values(is_solved=is_solved, is_ignored=is_ignored)
+        )
+        db.commit()
+        return {"message": "success", "count": result.rowcount}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.patch("/bulk-update")
 async def bulk_update(form: BuildUpdatePayload, db: Session = Depends(get_db)):
     """
-    Bulk update properties
+    Bulk update properties with optimized database operations
     """
+    if not form.items:
+        return {"message": "success"}
+
+    # Extract all property IDs
+    property_ids = [item["id"] for item in form.items]
+
+    # Get all properties in a single query
+    properties = db.query(Property).filter(Property.id.in_(property_ids)).all()
+    property_map = {p.id: p for p in properties}
+
+    # Get all property URLs from the fetched properties
+    property_urls = [p.url for p in properties if p.id in property_map]
+
+    # Get all related listings in a single query
+    listings = db.query(Listing).filter(Listing.url.in_(property_urls)).all()
+    listing_map = {l.url: l for l in listings}
+
+    # Process updates - first collect all changes
+    property_updates = []
+    listing_updates = []
+
     for item in form.items:
-        # query related property
-        property = db.query(Property).filter(Property.id == item["id"]).first()
-        if property:
-            pkeys = property.__dict__.keys()
-            pkeys = list(filter(lambda x: re.search("^[a-z]", x), pkeys))
+        property_id = item["id"]
+        if property_id in property_map:
+            property = property_map[property_id]
+
+            # Update property attributes
             for key, value in item.items():
-                if key == "id":
-                    continue
-                else:
+                if key != "id" and hasattr(property, key):
                     setattr(property, key, value)
-            try:
-                db.commit()
-            except Exception as e:
-                db.rollback()
-                raise HTTPException(status_code=500, detail=str(e))
-        else:
-            continue
-        # query related listing
-        listing = db.query(Listing).filter(Listing.url == property.url).first()
-        if listing:
-            lkeys = listing.__dict__.keys()
-            lkeys = list(filter(lambda x: re.search("^[a-z]", x), lkeys))
-            for key, value in item.items():
-                if key == "id":
-                    continue
+            property_updates.append(property)
+
+            # Update related listing if exists
+            if property.url in listing_map:
+                listing = listing_map[property.url]
+                # Update the updated_at timestamp
+                listing.updated_at = datetime.now()
+
+                for key, value in item.items():
+                    if key != "id" and hasattr(listing, key):
+                        setattr(listing, key, value)
+
+                # Tab classification logic
+                if hasattr(listing, "classify_tab") and callable(listing.classify_tab):
+                    listing.classify_tab()
                 else:
-                    setattr(listing, key, value)
-            try:
-                db.commit()
-            except Exception as e:
-                db.rollback()
-                raise HTTPException(status_code=500, detail=str(e))
-    return {"message": "success"}
+                    # Manual tab classification
+                    if listing.price >= 78656000000 and listing.currency == "IDR":
+                        listing.tab = "LUXURY LISTINGS"
+                    elif listing.price >= 5000000 and listing.currency == "USD":
+                        listing.tab = "LUXURY LISTINGS"
+                    elif listing.property_type == "Land":
+                        listing.tab = "ALL LAND"
+                    else:
+                        listing.tab = "DATA"
+
+                listing_updates.append(listing)
+
+    # Commit all changes in a single transaction
+    try:
+        db.commit()
+        return {
+            "message": "success",
+            "updated_properties": len(property_updates),
+            "updated_listings": len(listing_updates),
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

@@ -4,11 +4,13 @@ Routes for queue management
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import datetime
 from func import get_domain
 from database import get_checker_db, get_db
 from models import Queue, Listing
 from schemas.queue import StatusUpdate, BulkStatusUpdate
+from typing import List
 
 router = APIRouter(prefix="/queue", tags=["queue"])
 
@@ -24,16 +26,27 @@ async def get_queues(
     """
     Get all queues
     """
-    queues = db.query(Queue)
-    queues = queues.order_by(Queue.created_at.desc())
+    # Create base query with filters
+    base_query = db.query(Queue)
+
     if status != "All":
-        queues = queues.filter(Queue.status == status)
+        base_query = base_query.filter(Queue.status == status)
     if domain != "All":
-        queues = queues.filter(Queue.url.like(f"%{domain}%"))
+        base_query = base_query.filter(Queue.url.like(f"%{domain}%"))
     if date != "All":
-        queues = queues.filter(Queue.created_at >= date)
-    total_count = queues.count()
-    queues = queues.offset((page - 1) * 50).limit(50).all()
+        base_query = base_query.filter(Queue.created_at >= date)
+
+    # Get total count with the filter but without ordering or pagination
+    total_count = base_query.count()
+
+    # Apply ordering and pagination for the data query
+    queues = (
+        base_query.order_by(Queue.created_at.desc())
+        .offset((page - 1) * 50)
+        .limit(50)
+        .all()
+    )
+
     return {
         "message": "success",
         "results": {
@@ -49,11 +62,15 @@ async def get_domains(db: Session = Depends(get_checker_db)):
     """
     Get all unique domains
     """
-    queues = db.query(Queue).distinct().all()
-    urls = [get_domain(q.url) for q in queues]
-    urls = [url for url in urls if url is not None]
-    domains = list(set(urls))
+    # Use a more efficient query that extracts domains directly
+    domains_query = db.query(
+        func.distinct(func.substring(Queue.url, "(?:https?://)?(?:www\.)?([^/]+)"))
+    ).all()
+
+    # Filter None values and convert to list
+    domains = [domain[0] for domain in domains_query if domain[0]]
     domains.sort()
+
     return {"message": "success", "domains": domains}
 
 
@@ -62,57 +79,69 @@ async def sync_queue_to_listing(
     db: Session = Depends(get_checker_db), cloud_db: Session = Depends(get_db)
 ):
     """
-    Sync queue from Checker DB to REID DB
+    Sync queue from Checker DB to REID DB with optimized batch processing
     """
-    # query all not available queues from checker db
     this_month = datetime.now().strftime("%Y-%m-01")
-    statuses = ["Delisted", "Error"]
-    count = 0
-    for status in statuses:
-        queues = (
-            db.query(Queue)
-            .filter(Queue.status == status, Queue.updated_at >= this_month)
-            .all()
-        )
-        queue_urls = [q.url for q in queues]
-        listings = (
-            cloud_db.query(Listing)
-            .filter(Listing.url.in_(queue_urls), Listing.is_available == False)
-            .all()
-        )
-        for listing in listings:
-            listing.status = status
-            listing.updated_at = datetime.now()
-            listing.is_available = status == "Available"
-            count += 1
-    # query all available queues from checker db
-    queues = (
-        db.query(Queue)
-        .filter(Queue.status == "Available", Queue.updated_at >= this_month)
-        .all()
-    )
-    queue_urls = [q.url for q in queues]
-    listings = (
-        cloud_db.query(Listing)
-        .filter(Listing.url.in_(queue_urls), Listing.is_available == False)
-        .all()
-    )
-    for listing in listings:
-        listing.status = "Available"
-        listing.updated_at = datetime.now()
-        listing.is_available = True
-        count += 1
+    batch_size = 500  # Process in batches to reduce memory usage
+    status_updates = {"Delisted": 0, "Error": 0, "Available": 0}
 
-    # commit all changes
-    try:
-        cloud_db.commit()
-    except Exception as e:
-        print(f"Error updating listing {listing.url}: {e}")
-        cloud_db.rollback()
+    # Process multiple statuses with the same pattern
+    for status in ["Delisted", "Error", "Available"]:
+        offset = 0
+        while True:
+            # Get URLs in batches
+            queue_batch = (
+                db.query(Queue.url)
+                .filter(Queue.status == status, Queue.updated_at >= this_month)
+                .offset(offset)
+                .limit(batch_size)
+                .all()
+            )
+
+            # Break if no more records
+            if not queue_batch:
+                break
+
+            # Extract URLs from query results
+            urls = [q[0] for q in queue_batch]
+
+            # Only query listings that need updating (is_available doesn't match expected state)
+            expected_availability = status == "Available"
+            listings_to_update = (
+                cloud_db.query(Listing)
+                .filter(
+                    Listing.url.in_(urls), Listing.is_available != expected_availability
+                )
+                .all()
+            )
+
+            # Apply updates
+            for listing in listings_to_update:
+                listing.status = status
+                listing.updated_at = datetime.now()
+                listing.is_available = expected_availability
+                status_updates[status] += 1
+
+            # Commit batch
+            try:
+                if listings_to_update:
+                    cloud_db.commit()
+            except Exception as e:
+                cloud_db.rollback()
+                raise HTTPException(
+                    status_code=500, detail=f"Error updating listings: {str(e)}"
+                )
+
+            # Move to next batch
+            offset += batch_size
+
+    # Calculate total updated records
+    total_updated = sum(status_updates.values())
 
     return {
         "message": "success",
-        "details": f"{count} queues have been synced",
+        "details": f"{total_updated} queues have been synced",
+        "breakdown": status_updates,
     }
 
 
@@ -121,7 +150,9 @@ async def get_total_count(db: Session = Depends(get_checker_db)):
     """
     Get total count of errors
     """
-    total_errors = db.query(Queue).filter(Queue.status == "Error").count()
+    total_errors = (
+        db.query(func.count(Queue.id)).filter(Queue.status == "Error").scalar()
+    )
     return {
         "message": "success",
         "results": {
@@ -135,27 +166,47 @@ async def bulk_status_update(
     updates: BulkStatusUpdate, db: Session = Depends(get_checker_db)
 ):
     """
-    Update the status of multiple queue items at once
+    Update the status of multiple queue items at once with optimized batch processing
     """
     results = {"success": [], "failed": []}
-    for item in updates.items:
-        try:
-            queue = db.query(Queue).filter(Queue.id == item.id).first()
-            if queue:
-                queue.status = item.status
-                results["success"].append(item.id)
-            else:
-                results["failed"].append({"id": item.id, "reason": "Not found"})
-        except Exception as e:
-            results["failed"].append({"id": item.id, "reason": str(e)})
 
-    try:
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=500, detail=f"Failed to commit changes: {str(e)}"
-        )
+    # Group updates by status for more efficient processing
+    status_groups = {}
+    for item in updates.items:
+        if item.status not in status_groups:
+            status_groups[item.status] = []
+        status_groups[item.status].append(item.id)
+
+    # Process each status group
+    for status, ids in status_groups.items():
+        batch_size = 500
+        # Process in batches
+        for i in range(0, len(ids), batch_size):
+            batch_ids = ids[i : i + batch_size]
+
+            try:
+                # Fetch queue items to update
+                queues = db.query(Queue).filter(Queue.id.in_(batch_ids)).all()
+                queue_map = {q.id: q for q in queues}
+
+                # Update status
+                for queue_id in batch_ids:
+                    if queue_id in queue_map:
+                        queue_map[queue_id].status = status
+                        results["success"].append(queue_id)
+                    else:
+                        results["failed"].append(
+                            {"id": queue_id, "reason": "Not found"}
+                        )
+
+                # Commit batch
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                # Record all failed IDs from this batch
+                for queue_id in batch_ids:
+                    if queue_id not in results["success"]:
+                        results["failed"].append({"id": queue_id, "reason": str(e)})
 
     return {
         "status": "success",

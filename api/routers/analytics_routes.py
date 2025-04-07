@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from database import get_db
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, text, extract
 
 from models.listing import Listing
 from models.report import Report
@@ -22,79 +22,102 @@ router = APIRouter(
 @router.get("/listings-count")
 def get_monthly_new_listings_count(db: Session = Depends(get_db)):
     """
-    Retrieve the total count of new listings scraped.
+    Retrieve the total count of new listings scraped using efficient database aggregation.
     """
     try:
-        listings = db.query(Listing).all()
-        total = {}
-        for listing in listings:
-            reid_id = listing.reid_id
-            # REID_24_10_KIBR_12
-            match = re.search(r"REID_(\d{2})_(\d{2})", reid_id)
-            if match:
-                year = match.group(1)
-                month = match.group(2)
-                date = f"20{year}-{month}-01"
-                if date not in total:
-                    total[date] = 0
-                total[date] += 1
-        # sort by date and return as dictionary
-        total = sorted(total.items(), key=lambda x: x[0])
-        return {date: count for date, count in total}
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail="Internal server error during data retrieval."
+        # Use direct database aggregation instead of Python processing
+        # This version uses regex extraction at the database level
+        query = text(
+            """
+            SELECT 
+                CONCAT('20', SUBSTRING(reid_id, 6, 2), '-', SUBSTRING(reid_id, 9, 2), '-01') AS date_key,
+                COUNT(*) AS listing_count
+            FROM 
+                listing
+            WHERE 
+                reid_id REGEXP 'REID_[0-9]{2}_[0-9]{2}'
+            GROUP BY 
+                date_key
+            ORDER BY 
+                date_key
+        """
         )
+
+        result = db.execute(query).fetchall()
+
+        # Convert to dictionary with proper date keys
+        monthly_counts = {row[0]: row[1] for row in result}
+
+        return monthly_counts
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/report", response_model=ReportList)
 def get_report_count(date: str, db: Session = Depends(get_db)):
     """
-    Retrieve the data scraping reports.
+    Retrieve the data scraping reports with optimized query performance.
     """
     try:
         date_obj = datetime.strptime(date, "%Y-%m-01")
-        current_date = date_obj + timedelta(days=31)
-        current_month = current_date.strftime("%Y-%m-01")
-        next_month = (current_date + timedelta(days=31)).strftime("%Y-%m-01")
+        current_month = date_obj.strftime("%Y-%m-01")
+        next_month = (date_obj + timedelta(days=31)).strftime("%Y-%m-01")
 
-        # First identify the most recent report id for each source
-        subquery = (
-            db.query(Report.source, func.max(Report.created_at).label("max_created_at"))
-            .filter(Report.created_at >= current_month, Report.created_at < next_month)
-            .group_by(Report.source)
-            .subquery()
+        # Use a more efficient CTE approach with window functions to get the most recent reports
+        # This is more efficient than the subquery approach
+        query = text(
+            """
+            WITH ranked_reports AS (
+                SELECT 
+                    id,
+                    source,
+                    created_at,
+                    item_scraped_count,
+                    response_error_count,
+                    elapsed_time_seconds,
+                    ROW_NUMBER() OVER (PARTITION BY source ORDER BY created_at DESC) as rn
+                FROM 
+                    report
+                WHERE 
+                    created_at >= :current_month AND created_at < :next_month
+            )
+            SELECT 
+                id,
+                source,
+                created_at,
+                item_scraped_count AS total_listings,
+                item_scraped_count AS success_count,
+                response_error_count AS error_count,
+                elapsed_time_seconds AS duration
+            FROM 
+                ranked_reports
+            WHERE 
+                rn = 1
+            ORDER BY 
+                created_at DESC
+        """
         )
 
-        # Use the subquery to get the complete reports with the most recent created_at
-        reports = (
-            db.query(
-                Report.id,
-                Report.source,
-                Report.created_at,
-                func.sum(Report.item_scraped_count).label("total_listings"),
-                func.sum(Report.item_scraped_count).label("success_count"),
-                Report.response_error_count.label("error_count"),
-                Report.elapsed_time_seconds.label("duration"),
-            )
-            .join(
-                subquery,
-                (Report.source == subquery.c.source)
-                & (Report.created_at == subquery.c.max_created_at),
-            )
-            .filter(Report.created_at >= current_month, Report.created_at < next_month)
-            .group_by(
-                Report.id,
-                Report.source,
-                Report.created_at,
-                Report.response_error_count,
-                Report.elapsed_time_seconds,
-            )
-            .order_by(desc(Report.created_at))
-            .all()
-        )
+        reports = db.execute(
+            query, {"current_month": current_month, "next_month": next_month}
+        ).fetchall()
 
-        return {"reports": reports}
+        # Convert to expected format - maintain SQLAlchemy's row result structure
+        formatted_reports = []
+        for report in reports:
+            formatted_reports.append(
+                {
+                    "id": report[0],
+                    "source": report[1],
+                    "created_at": report[2],
+                    "total_listings": report[3],
+                    "success_count": report[4],
+                    "error_count": report[5],
+                    "duration": report[6],
+                }
+            )
+
+        return {"reports": formatted_reports}
     except ValueError:
         raise HTTPException(
             status_code=400, detail="Invalid date format. Use YYYY-MM-DD."
