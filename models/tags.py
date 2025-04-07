@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     ForeignKey,
     UniqueConstraint,
+    Index,
 )
 from sqlalchemy.orm import relationship
 import uuid
@@ -29,6 +30,10 @@ class Tag(Base):
 
     __table_args__ = (
         UniqueConstraint("property_id", "name", name="_property_name_uc"),
+        Index("idx_tag_name", "name"),
+        Index("idx_tag_property_id", "property_id"),
+        Index("idx_tag_is_solved", "is_solved"),
+        Index("idx_tag_is_ignored", "is_ignored"),
     )
 
     def __repr__(self):
