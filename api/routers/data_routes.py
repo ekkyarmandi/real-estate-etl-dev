@@ -1,17 +1,26 @@
 """
 File upload and download routes
+1. sold listings = True
+2. sold listings = False
+3. geolocation = True
 """
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Body
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 import json
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from fastapi.params import Depends
-from sqlalchemy import func, text
-from typing import Optional, List, Dict, Any
+from sqlalchemy import text
+from typing import Optional
+from datetime import datetime as dt
+from bs4 import BeautifulSoup
+import tempfile
+import re
+import os
 
-from database import get_checker_db
+from database import get_checker_db, get_db
 from func import get_domain
-from models import Queue
+from models import Queue, Listing
 from schemas.report import QueueStatsResponse
 
 router = APIRouter(prefix="/data", tags=["data"])
@@ -81,7 +90,7 @@ async def get_queue_stats(db: Session = Depends(get_checker_db)):
 @router.post("/upload")
 async def upload_file(
     file: Optional[UploadFile] = File(None),
-    url_field: Optional[str] = Form(default="Property Link"),
+    link_field: Optional[str] = Form(default="Property Link"),
     db: Session = Depends(get_checker_db),
 ):
     """
@@ -103,13 +112,13 @@ async def upload_file(
             # Check if URL is available and valid
             if (
                 item.get("Availability") == "Available"
-                and url_field in item
-                and item[url_field]
-                and isinstance(item[url_field], str)
-                and item[url_field].startswith("http")
+                and link_field in item
+                and item[link_field]
+                and isinstance(item[link_field], str)
+                and item[link_field].startswith("http")
             ):
 
-                url = item[url_field]
+                url = item[link_field]
                 domain = get_domain(url)
 
                 # Skip blacklisted domains
@@ -177,3 +186,273 @@ async def upload_file(
         raise HTTPException(
             status_code=500, detail=f"Error processing upload: {str(e)}"
         )
+
+
+@router.post("/export")
+async def export_file(
+    file: Optional[UploadFile] = File(None),
+    link_field: Optional[str] = Form(default="Property Link"),
+    include_geolocation: Optional[bool] = Form(default=False),
+    only_sold_listings: Optional[bool] = Form(default=True),
+    file_version: Optional[str] = Form(default="_v1"),
+    db: Session = Depends(get_db),
+):
+    """
+    :param file: The JSON file to upload
+    :param link_field: The field name for the Listing URL
+    """
+    # Check if file is provided
+    if not file:
+        raise HTTPException(
+            status_code=400, detail="No data provided. Please upload a file."
+        )
+    elif not link_field:
+        raise HTTPException(
+            status_code=400,
+            detail="No link field provided. Please provide a link field.",
+        )
+    elif not file.filename.endswith(".json"):
+        raise HTTPException(
+            status_code=400, detail="Invalid file type. Please upload a JSON file."
+        )
+
+    # Parse file content
+    content = await file.read()
+    data = json.loads(content)
+
+    default_file_name = file.filename.split(".")[0]
+    filename = f"{default_file_name}{file_version}.json"
+
+    # Count new listing
+    today = dt.now()
+    today = today.replace(month=today.month - 1)
+    current_reid_id = today.strftime("REID_%y_%m%")
+    listings = db.query(Listing).filter(
+        (Listing.reid_id.like(current_reid_id)) & Listing.is_available
+    )
+    # total_new_listings = listings.count()
+    listings = listings.all()
+
+    # Query existing listings
+    urls = [item[link_field] for item in data]
+    urls = [url for url in urls if url]
+    urls = [url for url in urls if url.startswith("http")]
+    urls = list(set(urls))
+    urls.sort()
+    existing_listings = db.query(Listing).filter(Listing.url.in_(urls)).all()
+    existing_listings = [listing.to_dict() for listing in existing_listings]
+    existing_listings = {listing[link_field]: listing for listing in existing_listings}
+    # Compare changes between data in the existing listings and the new listings
+    columns = [
+        "Region",
+        "Years",
+        "Location",
+        "Description",
+        "Image",
+        "Source A",
+        "Title",
+        "Bedrooms",
+        "Bathrooms",
+        "Build Size (SQM)",
+        "Land Size (SQM)",
+        "Property Type",
+        "Contract Type",
+        "Availability",
+    ]
+    replace_columns = [
+        "Image",
+        "Bedrooms",
+        "Bathrooms",
+        "Build Size (SQM)",
+        "Land Size (SQM)",
+        "Contract Type",
+        "Years",
+        "Availability",
+    ]
+    comparison = {}
+    changes = {}
+    count = 0
+    for l in data:
+        url = l[link_field]
+        if url in existing_listings:
+            r = existing_listings[url]
+            is_change = False
+            old_listing = {
+                "title": l.get("Title"),
+                "url": l.get(link_field),
+                "source": l.get("Source A"),
+            }
+            new_listing = {
+                "title": r.get("Title"),
+                "url": r.get(link_field),
+                "source": r.get("Source A"),
+            }
+            same_listing = all(
+                [
+                    old_listing.get(key) == new_listing.get(key)
+                    for key in old_listing.keys()
+                ]
+            )
+            if url not in comparison:
+                comparison[url] = {}
+            for key in columns:
+                v1 = l.get(key)
+                v2 = r.get(key)
+                if key in ["Build Size (SQM)", "Land Size (SQM)"] and v2:
+                    # skip new value if it is float
+                    t = str(v2)
+                    x = t.split(".")[-1]
+                    if int(x) == 0:
+                        t = t.split(".")[0]
+                    else:
+                        continue
+                    # skip if new value is end with 2
+                    if not re.search(r"2$", t):
+                        v2 = float(t)
+                    else:
+                        continue
+                # skip if listing availability is not sold
+                if only_sold_listings and key == "Availability" and v2 != "Sold":
+                    continue
+                # fix title
+                if v2 and re.search(r"^<", str(v2)) and key == "Title":
+                    soup = BeautifulSoup(v2, "html.parser")
+                    v2 = soup.get_text()
+                elif v2 and key == "Title":
+                    v2 = re.sub(r"\n", "", v2)
+                # compare changes
+                if not v1 and v2 and key not in changes:
+                    changes.update({key: 1})
+                    comparison[url].update({key: {"before": v1, "after": v2}})
+                    is_change = True
+                elif not v1 and v2:
+                    changes[key] += 1
+                    comparison[url].update({key: {"before": v1, "after": v2}})
+                    is_change = True
+                elif (
+                    v2
+                    and v1 != v2
+                    and key not in changes
+                    and key in replace_columns
+                    and same_listing
+                ):
+                    changes.update({key: 1})
+                    comparison[url].update({key: {"before": v1, "after": v2}})
+                    is_change = True
+                elif v2 and v1 != v2 and key in replace_columns and same_listing:
+                    changes[key] += 1
+                    comparison[url].update({key: {"before": v1, "after": v2}})
+                    is_change = True
+            if is_change:
+                count += 1
+            else:
+                comparison.pop(url)
+
+    # return {
+    #     "status": "success",
+    #     "total_new_listings": total_new_listings,  # ✅
+    #     "total_uploaded_listings": len(data),
+    #     "total_existing_listings": len(existing_listings),
+    #     "reid_id": current_reid_id,
+    #     "changes_compare": changes,
+    #     "changes_count": count,
+    #     # "example_uploaded_listing": data[0],
+    #     # "example_new_listing": listings.first().to_dict(),
+    # }
+
+    # query listings with geolocation
+    geolocation_listings = db.query(Listing).filter(Listing.longitude != None).all()
+    geolocation_listings = [listing.to_dict() for listing in geolocation_listings]
+    geolocation_listings = {
+        listing[link_field]: listing for listing in geolocation_listings
+    }
+
+    # 1. update the main data
+    new_data = []
+    for item in data:
+        url = item[link_field]
+        if url in comparison:
+            new_value = {k: v["after"] for k, v in comparison[url].items()}
+            item.update(new_value)
+            new_data.append(item)
+        else:
+            new_data.append(item)
+
+    # 2. add new listings
+    for l in listings:
+        if l.url not in comparison:
+            new_data.append(l.to_dict())
+
+    # 3. listings with geolocation
+    if include_geolocation:
+        for item in new_data:
+            if item[link_field] in geolocation_listings:
+                g = geolocation_listings[item[link_field]]
+                item.update(
+                    {
+                        "Longitude": g["Longitude"],
+                        "Latitude": g["Latitude"],
+                    }
+                )
+        new_data_urls = [item[link_field] for item in new_data]
+        for url, g in geolocation_listings.items():
+            if url not in new_data_urls:
+                new_data.append(g)
+
+    # convert all timestamp into %B/%y format
+    for item in new_data:
+        date_keys = [
+            "Sold Date",
+            "List Date",
+            "Scrape Date",
+        ]
+        for key in date_keys:
+            date_value = item.get(key)
+            if date_value:
+                if isinstance(date_value, int):
+                    try:
+                        new_date = dt.fromtimestamp(date_value)
+                        item[key] = new_date.strftime("%b/%y")
+                    except ValueError:
+                        new_date = dt.fromtimestamp(date_value / 1000)
+                        item[key] = new_date.strftime("%b/%y")
+                elif isinstance(date_value, dt):
+                    item[key] = date_value.strftime("%b/%y")
+
+    # Site status rule
+    for item in new_data:
+        sold_at = item.get("Sold Date")
+        availability = item.get("Availability")
+        if availability in ["Sold", "Delisted"]:
+            if availability == "Delisted":
+                item["Availability"] = "Sold"
+                item["Site Status"] = "Delisted"
+            elif availability == "Sold":
+                item["Site Status"] = None
+            if not sold_at:
+                today = dt.now()
+                today = today.replace(month=today.month - 1)
+                item["Sold Date"] = today.strftime("%b/%y")
+        else:
+            item["Site Status"] = None
+            item["Sold Date"] = None
+
+    # Remove listing with no Longitude
+    if include_geolocation:
+        new_data = [item for item in new_data if "Longitude" in item]
+        new_data = [item for item in new_data if item["Longitude"] is not None]
+
+    # Create a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w+") as tmp:
+        json.dump(new_data, tmp, indent=2)
+        tmp_path = tmp.name
+
+    # Return the file and ensure it gets deleted after sending
+    return FileResponse(
+        path=tmp_path,
+        filename=filename,
+        media_type="application/json",
+        background=lambda: os.unlink(
+            tmp_path
+        ),  # Delete the temp file after it's been sent
+    )

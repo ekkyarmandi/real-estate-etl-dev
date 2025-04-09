@@ -232,4 +232,6 @@ class Listing(Base):
             "Garden": None,  # Not stored in model
             "Single story": None,  # Not stored in model
             "Second story": None,  # Not stored in model
+            "Longitude": self.longitude,
+            "Latitude": self.latitude,
         }
