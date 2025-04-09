@@ -456,3 +456,115 @@ async def export_file(
             tmp_path
         ),  # Delete the temp file after it's been sent
     )
+
+
+@router.post("/count")
+async def count_listings(
+    file: Optional[UploadFile] = File(None),
+    date: Optional[str] = Form(default="2025-03-01"),
+    db: Session = Depends(get_db),
+):
+    """
+    Count the number of listings in the file
+    """
+    if not file:
+        raise HTTPException(
+            status_code=400, detail="No data provided. Please upload a file."
+        )
+    content = await file.read()
+    data = json.loads(content)
+
+    # count total listings
+    total_listings = len(data)
+
+    # count total new listings
+    if date:
+        reid_date = dt.strptime(date, "%Y-%m-%d")
+        reid_date = reid_date.replace(month=reid_date.month - 1)
+        reid_ids = [item["REID ID"] for item in data]
+        reid_ids = [item for item in reid_ids if item]
+        reid_ids = [
+            item
+            for item in reid_ids
+            if item.startswith(reid_date.strftime("REID_%y_%m"))
+        ]
+        total_new_listings = len(reid_ids)
+    else:
+        total_new_listings = 0
+
+    # get all sold dates
+    if date:
+        sold_date = dt.strptime(date, "%Y-%m-%d")
+        sold_date = sold_date.replace(month=sold_date.month - 1)
+        sold_dates = [item["Sold Date"] for item in data]
+        sold_dates = [item for item in sold_dates if item]
+        sold_dates = [
+            item for item in sold_dates if item == sold_date.strftime("%b/%y")
+        ]
+    else:
+        sold_dates = []
+
+    listings = (
+        db.query(Listing)
+        .filter(
+            Listing.is_available == False,
+            Listing.updated_at >= date,
+        )
+        .all()
+    )
+    listing_urls = [item.url for item in listings]
+
+    # cound sold listing by sold date
+    sold_date_by_source = {}
+    for item in data:
+        status = item["Availability"]
+        source = item["Source A"]
+        listing_url = item["Property Link"]
+        if status == "Sold" and source and listing_url in listing_urls:
+            if source not in sold_date_by_source:
+                sold_date_by_source[source] = 1
+            else:
+                sold_date_by_source[source] += 1
+
+    return {
+        "month": sold_date.strftime("%b/%y"),
+        "total_listings": len(data),
+        "total_new_listings": total_new_listings,
+        "total_sold_listings": len(sold_dates),
+        "sold_date_by_source": sold_date_by_source,
+    }
+
+
+@router.post("/before-after")
+async def count_listings(
+    file: Optional[UploadFile] = File(None),
+    date: Optional[str] = Form(default="2025-03-01"),
+    db: Session = Depends(get_db),
+):
+    """
+    Compare availability before and after a certain date
+    """
+    if not file:
+        raise HTTPException(
+            status_code=400, detail="No data provided. Please upload a file."
+        )
+    content = await file.read()
+    data = json.loads(content)
+
+    listings = db.query(Listing).filter(Listing.updated_at >= date).all()
+    listings = [listing.to_dict() for listing in listings]
+    listings = {listing["Property Link"]: listing for listing in listings}
+
+    # compare listings availability before and after
+    before_after = {}
+    for item in data:
+        url = item["Property Link"]
+        if url in listings:
+            before = item["Availability"]
+            after = listings[url]["Availability"]
+            if after == "Available" and before != "Available":
+                before_after.update({url: {"before": before, "after": after}})
+
+    return {
+        "data": before_after,
+    }
