@@ -14,6 +14,8 @@ from sqlalchemy import text
 from typing import Optional
 from datetime import datetime as dt
 from bs4 import BeautifulSoup
+from datetime import datetime
+from tqdm import tqdm
 import tempfile
 import re
 import os
@@ -474,69 +476,80 @@ async def count_listings(
     content = await file.read()
     data = json.loads(content)
 
-    # count total listings
-    total_listings = len(data)
+    date = dt.strptime(date, "%Y-%m-%d")
+    date = date.replace(month=date.month - 1)
+    prev_month = date.strftime("%b/%y")
 
     # count total new listings
     if date:
-        reid_date = dt.strptime(date, "%Y-%m-%d")
-        reid_date = reid_date.replace(month=reid_date.month - 1)
         reid_ids = [item["REID ID"] for item in data]
         reid_ids = [item for item in reid_ids if item]
-        reid_ids = [
-            item
-            for item in reid_ids
-            if item.startswith(reid_date.strftime("REID_%y_%m"))
-        ]
+        reid_ids = [i for i in reid_ids if i.startswith(date.strftime("REID_%y_%m"))]
         total_new_listings = len(reid_ids)
     else:
         total_new_listings = 0
 
-    # get all sold dates
-    if date:
-        sold_date = dt.strptime(date, "%Y-%m-%d")
-        sold_date = sold_date.replace(month=sold_date.month - 1)
-        sold_dates = [item["Sold Date"] for item in data]
-        sold_dates = [item for item in sold_dates if item]
-        sold_dates = [
-            item for item in sold_dates if item == sold_date.strftime("%b/%y")
-        ]
-    else:
-        sold_dates = []
+    blacklist_source = [
+        "Coco Developments",
+        "Alex Villa",
+        "Living Properties",
+        "Mirah",
+        "Loyo Development",
+        "Anta Group",
+        "Pertama",
+        "Nexa",
+        "Address Bali",
+        "Body Factory Bali",
+    ]
 
-    listings = (
-        db.query(Listing)
-        .filter(
-            Listing.is_available == False,
-            Listing.updated_at >= date,
-        )
-        .all()
-    )
-    listing_urls = [item.url for item in listings]
+    # query bali home immo listings
+    bhi = db.query(Listing).filter(Listing.source == "Bali Home Immo").all()
+    bhi = {l.url: l.to_dict() for l in bhi}
 
     # cound sold listing by sold date
-    sold_date_by_source = {}
+    sold_out_listings = {}
+    total_sould_out = 0
+    missing_sold_date = 0
     for item in data:
+        sold_date = item["Sold Date"]
         status = item["Availability"]
         source = item["Source A"]
-        listing_url = item["Property Link"]
-        if status == "Sold" and source and listing_url in listing_urls:
-            if source not in sold_date_by_source:
-                sold_date_by_source[source] = 1
+        url = item["Property Link"]
+        if status != "Available" and source and source not in blacklist_source:
+            if source == "Bali Home Immo":
+                if url not in bhi:
+                    continue
+                bhi_month = bhi[url].get("Sold Date")
+                if bhi_month and sold_date == bhi_month:
+                    if source not in sold_out_listings:
+                        sold_out_listings[source] = 1
+                    else:
+                        sold_out_listings[source] += 1
+                    total_sould_out += 1
+                elif not sold_date:
+                    missing_sold_date += 1
             else:
-                sold_date_by_source[source] += 1
+                if sold_date == prev_month:
+                    if source not in sold_out_listings:
+                        sold_out_listings[source] = 1
+                    else:
+                        sold_out_listings[source] += 1
+                    total_sould_out += 1
+                elif not sold_date:
+                    missing_sold_date += 1
 
     return {
-        "month": sold_date.strftime("%b/%y"),
+        "month": prev_month,
         "total_listings": len(data),
         "total_new_listings": total_new_listings,
-        "total_sold_listings": len(sold_dates),
-        "sold_date_by_source": sold_date_by_source,
+        "total_sold_listings": total_sould_out,
+        "missing_sold_date": missing_sold_date,
+        "sold_out_listing_by_source": sold_out_listings,
     }
 
 
 @router.post("/before-after")
-async def count_listings(
+async def availability_comparison(
     file: Optional[UploadFile] = File(None),
     date: Optional[str] = Form(default="2025-03-01"),
     db: Session = Depends(get_db),
@@ -555,16 +568,161 @@ async def count_listings(
     listings = [listing.to_dict() for listing in listings]
     listings = {listing["Property Link"]: listing for listing in listings}
 
+    # convert date into B/y format and subtract 1 month
+    date = dt.strptime(date, "%Y-%m-%d")
+    date = date.replace(month=date.month - 1)
+    month = date.strftime("%b/%y")
+
     # compare listings availability before and after
-    before_after = {}
+    before_after = []
     for item in data:
         url = item["Property Link"]
         if url in listings:
             before = item["Availability"]
+            before_sold_date = item["Sold Date"]
             after = listings[url]["Availability"]
             if after == "Available" and before != "Available":
-                before_after.update({url: {"before": before, "after": after}})
+                before_after.append(
+                    {
+                        "url": url,
+                        "sold_date": before_sold_date,
+                        "status_before": before,
+                        "current_month": month,
+                        "status_after": after,
+                    }
+                )
 
     return {
         "data": before_after,
     }
+
+
+@router.post("/check")
+async def availability_comparison(
+    file: Optional[UploadFile] = File(None),
+    date: Optional[str] = Form(default="2025-03-01"),
+    db: Session = Depends(get_db),
+):
+    """
+    Availability check and comparison
+    """
+    # load data
+    if not file:
+        raise HTTPException(
+            status_code=400, detail="No data provided. Please upload a file."
+        )
+    content = await file.read()
+    data = json.loads(content)
+
+    # load listings
+    listings = (
+        db.query(Listing)
+        .filter((Listing.sold_at == None) & (Listing.is_available == False))
+        .all()
+    )
+    # listings = [l.to_dict() for l in listings]
+    listings = {l.url: l for l in listings}
+
+    raja_villa = (
+        db.query(Listing)
+        .filter((Listing.source == "Bali Home Immo") & (Listing.is_available == False))
+        .all()
+    )
+    # raja_villa = [l.to_dict() for l in raja_villa]
+    raja_villa = {l.url: l for l in raja_villa}
+
+    # GOALS
+    # i want to fill any missing sold date in the listing
+    # with sold date in the previous dataset for the same url
+
+    # Is there any listings in data that missings sold date? Few, and the source don't even exist in the project
+    # output = {}
+    # for item in data:
+    #     url = item["Property Link"]
+    #     sold_date = item["Sold Date"]
+    #     status = item["Availability"]
+    #     source = item["Source A"]
+    #     if status != "Available" and not sold_date:
+    #         if source in output:
+    #             output[source] += 1
+    #         else:
+    #             output.update({source: 1})
+    # return {"results": {"data": output}}
+
+    # How many listings in db that missing sold date while it actually not missing in data table: 120
+    # len_exist = 0
+    # for item in data:
+    #     url = item["Property Link"]
+    #     sold_date = item["Sold Date"]
+    #     status = item["Availability"]
+    #     if url in listings and sold_date and status != "Available":
+    #         len_exist += 1
+    # count = {
+    #     "listings": len(listings),
+    #     "exist": len_exist,
+    # }
+
+    # Sync listings missing sold date with main database data
+    result = []
+    # for item in data:
+    #     url = item["Property Link"]
+    #     sold_date = item["Sold Date"]
+    #     status = item["Availability"]
+    #     if status != "Available" and sold_date:
+    #         if url in listings:
+    #             listing = listings[url]
+    #         else:
+    #             listing = None
+    #         # elif url in raja_villa:
+    #         #     listing = raja_villa[url]
+    #         if listing:
+    #             new_listing = {
+    #                 "url": url,
+    #                 "before": {
+    #                     "sold_status": listing.sold_at,
+    #                     "status": listing.availability,
+    #                 },
+    #                 "after": {
+    #                     "sold_status": item["Sold Date"],
+    #                     "status": item["Availability"],
+    #                 },
+    #             }
+    #             result.append(new_listing)
+
+    # result = []
+    for item in tqdm(data):
+        url = item["Property Link"]
+        sold_date = item["Sold Date"]
+        status = item["Availability"]
+        if status != "Available" and sold_date:
+            if url in raja_villa:
+                listing = raja_villa[url]
+            elif url in listings:
+                listing = listings[url]
+            else:
+                listing = None
+            # convert sold_date to str
+            sold_date = datetime.fromtimestamp(sold_date / 1000)
+            if listing:
+                delisted = item["Site Status"]
+                # update listing
+                listing.sold_at = sold_date.strftime("%Y-%m-%d")
+                listing.is_available = False
+                listing.availability = delisted if delisted else status
+                db.commit()
+                db.refresh(listing)
+                # after refresh
+                new_listing = {
+                    "url": url,
+                    "before": {
+                        "sold_date": listing.sold_at,
+                        "status": listing.availability,
+                    },
+                    "after": {
+                        "sold_date": sold_date.strftime("%Y-%m-%d"),
+                        "status": status,
+                    },
+                }
+                result.append(new_listing)
+
+    return {"results": {"count": len(result), "data": result}}
