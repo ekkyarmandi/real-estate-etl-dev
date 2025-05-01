@@ -36,7 +36,7 @@ class UbudPropertySpider(BaseSpider):
         codes = response.css("a:contains(Detail)::attr(href)").getall()
         urls = list(map(lambda x: urljoin(response.url, x), codes))
         urls = list(filter(lambda x: x not in self.visited_urls, urls))
-        urls = list(filter(lambda x: x not in self.existing_urls, urls))
+        # urls = list(filter(lambda x: x not in self.existing_urls, urls))
         for url in urls:
             if url not in self.visited_urls:
                 self.visited_urls.append(url)

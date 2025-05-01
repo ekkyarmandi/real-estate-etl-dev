@@ -89,7 +89,7 @@ class BaliHomeImmoSpider(BaseSpider):
         urls = list(filter(lambda x: x.startswith("http"), urls))
         urls = list(dict.fromkeys(urls))
         urls = list(filter(lambda x: x not in self.visited_urls, urls))
-        urls = list(filter(lambda x: x not in self.existing_urls, urls))
+        # urls = list(filter(lambda x: x not in self.existing_urls, urls))
         for url in urls:
             if url not in self.visited_urls:
                 self.visited_urls.append(url)

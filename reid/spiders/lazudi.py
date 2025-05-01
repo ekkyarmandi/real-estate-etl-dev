@@ -28,7 +28,7 @@ class LazudiSpider(BaseSpider):
     def parse(self, response):
         urls = response.css("#properties_list a::attr(href)").getall()
         # filter out existing and visited listings
-        urls = list(filter(lambda x: x not in self.existing_urls, urls))
+        # urls = list(filter(lambda x: x not in self.existing_urls, urls))
         urls = list(filter(lambda x: x not in self.visited_urls, urls))
         # crawl new listings
         for url in urls:
