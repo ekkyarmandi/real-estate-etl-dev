@@ -74,7 +74,7 @@ class PropertyPipeline:
         start_time = stats.get("start_time", 0)
         elapsed_time = dt.now(start_time.tzinfo) - start_time
         spider_stats = dict(
-            source=self.source,
+            source=spider.name,
             scraped_at=spider.scraped_at,
             item_scraped_count=stats.get("item_scraped_count", 0),
             item_dropped_count=stats.get("item_dropped_count", 0),
