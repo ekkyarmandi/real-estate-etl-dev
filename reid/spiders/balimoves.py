@@ -38,14 +38,14 @@ class BaliMovesSpider(BaseSpider):
                     errback=self.handle_error,
                 )
         # iterate existing urls
-        for url in self.existing_urls:
-            if not url in self.visited_urls:
-                self.visited_urls.append(url)
-                yield scrapy.Request(
-                    url,
-                    callback=self.parse_detail,
-                    errback=self.handle_error,
-                )
+        # for url in self.existing_urls:
+        #     if not url in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield scrapy.Request(
+        #             url,
+        #             callback=self.parse_detail,
+        #             errback=self.handle_error,
+        #         )
         # do pagination
         pages = response.css("a.page-numbers::Text").re("\d{1}")
         if pages:

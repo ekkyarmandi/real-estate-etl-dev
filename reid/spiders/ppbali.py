@@ -34,10 +34,10 @@ class PpbaliSpider(BaseSpider):
             if url not in self.visited_urls:
                 self.visited_urls.append(url)
                 yield response.follow(url, callback=self.parse_detail)
-        for url in self.existing_urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(url, callback=self.parse_detail)
+        # for url in self.existing_urls:
+        #     if url not in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield response.follow(url, callback=self.parse_detail)
 
     def parse_detail(self, response):
         ## lambda functions ##

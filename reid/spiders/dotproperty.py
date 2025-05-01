@@ -45,15 +45,15 @@ class DotPropertySpider(BaseSpider):
                 meta=dict(redirected_from=url),
             )
         # iterate existing urls
-        for url in self.existing_urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(
-                    url,
-                    callback=self.parse_detail,
-                    errback=self.handle_error,
-                    meta=dict(redirected_from=url),
-                )
+        # for url in self.existing_urls:
+        #     if url not in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield response.follow(
+        #             url,
+        #             callback=self.parse_detail,
+        #             errback=self.handle_error,
+        #             meta=dict(redirected_from=url),
+        #         )
 
     def parse_detail(self, response):
         origin_url = response.meta.get("redirected_from", None)

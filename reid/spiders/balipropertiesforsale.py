@@ -59,10 +59,10 @@ class BaliPropertiesForSaleSpider(BaseSpider):
                     )
 
             # fetch existing urls
-            for url in self.existing_urls:
-                if url not in self.visited_urls:
-                    self.visited_urls.append(url)
-                    yield scrapy.Request(url, callback=self.parse_detail)
+            # for url in self.existing_urls:
+            #     if url not in self.visited_urls:
+            #         self.visited_urls.append(url)
+            #         yield scrapy.Request(url, callback=self.parse_detail)
 
             # Pagination
             count = data.get("count", 1)

@@ -41,15 +41,15 @@ class LazudiSpider(BaseSpider):
                     meta=dict(redirected_from=url),
                 )
         # crawl existing listings
-        for url in self.existing_urls:
-            if not url in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(
-                    url,
-                    callback=self.parse_detail,
-                    errback=self.handle_error,
-                    meta=dict(redirected_from=url),
-                )
+        # for url in self.existing_urls:
+        #     if not url in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield response.follow(
+        #             url,
+        #             callback=self.parse_detail,
+        #             errback=self.handle_error,
+        #             meta=dict(redirected_from=url),
+        #         )
         next_page = response.css(
             "#properties_pagination li a[rel*=next]::attr(href)"
         ).get()

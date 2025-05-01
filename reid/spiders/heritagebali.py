@@ -27,10 +27,10 @@ class HeritageBaliSpider(BaseSpider):
                 yield response.follow(url, callback=self.parse_detail)
 
         # pass the existing urls
-        for url in self.existing_urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(url, callback=self.parse_detail)
+        # for url in self.existing_urls:
+        #     if url not in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield response.follow(url, callback=self.parse_detail)
 
         # go to the next url
         next_url = response.css("ul.pagination li.roundright a::attr(href)").get()

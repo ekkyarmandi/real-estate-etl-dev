@@ -39,15 +39,15 @@ class KibarerSpider(BaseSpider):
                     meta={"redirect_from": url},
                 )
         # Iterate the existing urls
-        for url in self.existing_urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(
-                    url,
-                    callback=self.parse_detail,
-                    errback=self.handle_error,
-                    meta={"redirect_from": url},
-                )
+        # for url in self.existing_urls:
+        #     if url not in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield response.follow(
+        #             url,
+        #             callback=self.parse_detail,
+        #             errback=self.handle_error,
+        #             meta={"redirect_from": url},
+        #         )
         # Do paginating
         next_url = response.css(
             "div#pagination ul li a[aria-label=Next]::attr(href)"

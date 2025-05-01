@@ -39,14 +39,14 @@ class PropertiaBaliSpider(BaseSpider):
                 )
 
         # loop and parse it to parse_detail
-        for url in self.existing_urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(
-                    url=url,
-                    callback=self.parse_detail,
-                    errback=self.handle_error,
-                )
+        # for url in self.existing_urls:
+        #     if url not in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield response.follow(
+        #             url=url,
+        #             callback=self.parse_detail,
+        #             errback=self.handle_error,
+        #         )
 
         # get the next page url
         next_url = response.css(

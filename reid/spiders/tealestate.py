@@ -42,10 +42,10 @@ class TealestateSpider(BaseSpider):
         existing_urls = [
             url for url in self.existing_urls if url not in self.visited_urls
         ]
-        for url in existing_urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield response.follow(url, callback=self.parse_detail)
+        # for url in existing_urls:
+        #     if url not in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield response.follow(url, callback=self.parse_detail)
         # go to next url
         pagination = data.get("pagination")
         if pagination:

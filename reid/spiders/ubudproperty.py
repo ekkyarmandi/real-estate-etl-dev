@@ -45,12 +45,12 @@ class UbudPropertySpider(BaseSpider):
                 )
 
         # fetch existing urls
-        for url in self.existing_urls:
-            if url not in self.visited_urls:
-                self.visited_urls.append(url)
-                yield scrapy.Request(
-                    url, callback=self.parse_detail, errback=self.handle_error
-                )
+        # for url in self.existing_urls:
+        #     if url not in self.visited_urls:
+        #         self.visited_urls.append(url)
+        #         yield scrapy.Request(
+        #             url, callback=self.parse_detail, errback=self.handle_error
+        #         )
 
         # do pagination
         last_page = response.css("ul.pagination li:contains(Last) a::attr(href)").get()
