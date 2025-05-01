@@ -80,7 +80,6 @@ CUSTOM_PROXY = config("PROXY_URL")
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
-    "reid.pipelines.property.RawDataPipeline": 100,
     "reid.pipelines.property.PropertyPipeline": 200,
     "reid.pipelines.property.ListingPipeline": 300,
     # "reid.pipelines.local.CheckMissingFieldsPipeline": 300,
