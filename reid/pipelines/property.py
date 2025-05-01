@@ -7,6 +7,9 @@ from models.report import Report
 from scrapy.exceptions import DropItem
 from datetime import datetime as dt
 import logging
+import scrapy
+from itemadapter import ItemAdapter
+from reid.items import PropertyItem
 
 
 class PropertyPipeline:
@@ -16,26 +19,32 @@ class PropertyPipeline:
         self.logger.addHandler(handler)
 
     def process_item(self, item, spider):
+        if not isinstance(item, PropertyItem):
+            return item
         if item.get("skip", False):
             return item
+
+        adapter = ItemAdapter(item)
+        item_dict = adapter.asdict()
+
         # remove unnecessary fields after raw data
-        item.pop("html", None)
-        item.pop("json", None)
-        # modify item to match property model
-        if item.get("availability_label"):
-            item["availability"] = item.pop("availability_label")
-            item["is_available"] = item["availability"] == "Available"
+        item_dict.pop("html", None)
+        item_dict.pop("json", None)
+        # modify item_dict to match property model
+        if item_dict.get("availability_label"):
+            item_dict["availability"] = item_dict.pop("availability_label")
+            item_dict["is_available"] = item_dict["availability"] == "Available"
 
         try:
             db = next(get_db())
-            property = Property(**item)
+            property = Property(**item_dict)
             property.check_off_plan()
             property.define_land_zoning()  # this will applied to Land property type only
             db.add(property)
             db.commit()
             db.refresh(property)
             property.identify_issues()
-            item["land_zoning"] = property.land_zoning
+            item_dict["land_zoning"] = property.land_zoning
             # remove errors related to url in spider source
             db.query(Error).filter(
                 Error.url == property.url, Error.source == "Spider"
@@ -45,7 +54,7 @@ class PropertyPipeline:
             db.rollback()
             # record error
             error = Error(
-                url=item.get("url"),
+                url=item_dict.get("url"),
                 source="PropertyPipeline",
                 error_message=str(e),
             )
@@ -55,8 +64,8 @@ class PropertyPipeline:
             error_message = f"Error on PropertyPipeline insertion: {e}"
             self.logger.error(error_message)
             raise DropItem(error_message)
-        item.pop("id", None)
-        return item
+
+        return item_dict
 
     def close_spider(self, spider):
         # get spider stats

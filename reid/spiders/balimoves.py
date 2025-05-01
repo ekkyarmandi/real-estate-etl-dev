@@ -47,7 +47,7 @@ class BaliMovesSpider(BaseSpider):
         #             errback=self.handle_error,
         #         )
         # do pagination
-        pages = response.css("a.page-numbers::Text").re("\d{1}")
+        pages = response.css("a.page-numbers::Text").re(r"\\d{1}")
         if pages:
             max_page = max(map(int, pages))
             # get response url path and ignore the query params
