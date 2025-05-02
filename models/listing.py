@@ -85,9 +85,15 @@ class Listing(Base):
             self.reid_id = reid_id
 
     def classify_tab(self):
-        if self.price >= 78656000000 and self.currency == "IDR":
+        if (
+            self.price is not None
+            and self.price >= 78656000000
+            and self.currency == "IDR"
+        ):
             self.tab = "LUXURY LISTINGS"
-        elif self.price >= 5000000 and self.currency == "USD":
+        elif (
+            self.price is not None and self.price >= 5000000 and self.currency == "USD"
+        ):
             self.tab = "LUXURY LISTINGS"
         elif self.property_type == "Land":
             self.tab = "ALL LAND"
