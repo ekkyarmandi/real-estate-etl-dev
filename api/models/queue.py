@@ -10,3 +10,6 @@ class Queue(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     url = Column(String, unique=True)
     status = Column(String)
+
+    def __str__(self):
+        return f"Queue(id={self.id}, url={self.url}, status={self.status})"

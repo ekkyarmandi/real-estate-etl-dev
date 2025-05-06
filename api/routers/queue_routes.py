@@ -2,7 +2,8 @@
 Routes for queue management
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+import json
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime
@@ -10,7 +11,8 @@ from func import get_domain
 from database import get_checker_db, get_db
 from models import Queue, Listing
 from schemas.queue import StatusUpdate, BulkStatusUpdate
-from typing import List
+from typing import List, Optional
+from urllib.parse import urlparse
 
 router = APIRouter(prefix="/queue", tags=["queue"])
 
@@ -212,4 +214,59 @@ async def bulk_status_update(
         "status": "success",
         "message": f"Updated {len(results['success'])} items, {len(results['failed'])} failed",
         "results": results,
+    }
+
+
+@router.post("/total-not-available")
+async def total_not_available(
+    file: UploadFile = File(...),
+    date: str = Form(default="2025-03-01"),
+    db: Session = Depends(get_checker_db),
+):
+    """
+    Get count of not 'Available' Queue objects per domain, filtered by updated_at >= date.
+    """
+    if not file:
+        raise HTTPException(status_code=400, detail="No file provided")
+
+    content = await file.read()
+    data = json.loads(content)
+    listings = list(filter(lambda x: x["Availability"] == "Available", data))
+    data_urls = list(set([x["Property Link"] for x in listings if x["Property Link"]]))
+
+    # Query all relevant queues
+    queues = (
+        db.query(Queue)
+        .filter(
+            Queue.status != "Available",
+            Queue.updated_at >= date,
+            Queue.url.in_(data_urls),
+        )
+        .all()
+    )
+
+    # Helper to extract domain from URL
+    def extract_domain(url):
+        try:
+            netloc = urlparse(url).netloc
+            return netloc or url.split("/")[2]  # fallback if urlparse fails
+        except Exception:
+            return None
+
+    domain_counts = {}
+    for queue in queues:
+        domain = extract_domain(queue.url)
+        if domain:
+            status = queue.status
+            if domain not in domain_counts:
+                domain_counts[domain] = {}
+            if status not in domain_counts[domain]:
+                domain_counts[domain][status] = 0
+            domain_counts[domain][status] += 1
+
+    return {
+        "message": "success",
+        "results": domain_counts,
+        "total_domains": len(domain_counts),
+        "total_not_available": len(queues),
     }

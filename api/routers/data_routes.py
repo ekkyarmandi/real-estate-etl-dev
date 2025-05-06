@@ -20,8 +20,8 @@ import tempfile
 import re
 import os
 
-from database import get_checker_db, get_db
-from func import get_domain
+from database import get_local_db, get_cloud_db, get_checker_db, get_db
+from func import get_domain, convert_dates_in_item
 from models import Queue, Listing
 from schemas.report import QueueStatsResponse
 
@@ -403,23 +403,7 @@ async def export_file(
 
     # convert all timestamp into %B/%y format
     for item in new_data:
-        date_keys = [
-            "Sold Date",
-            "List Date",
-            "Scrape Date",
-        ]
-        for key in date_keys:
-            date_value = item.get(key)
-            if date_value:
-                if isinstance(date_value, int):
-                    try:
-                        new_date = dt.fromtimestamp(date_value)
-                        item[key] = new_date.strftime("%b/%y")
-                    except ValueError:
-                        new_date = dt.fromtimestamp(date_value / 1000)
-                        item[key] = new_date.strftime("%b/%y")
-                elif isinstance(date_value, dt):
-                    item[key] = date_value.strftime("%b/%y")
+        item = convert_dates_in_item(item)
 
     # Site status rule
     for item in new_data:
@@ -548,6 +532,57 @@ async def count_listings(
     }
 
 
+@router.post("/count-json")
+async def count_json_listings(
+    file: Optional[UploadFile] = File(None),
+    checker_db: Session = Depends(get_checker_db),
+    cloud_db: Session = Depends(get_cloud_db),
+):
+    """
+    Count JSON listing availability status based on URL and availability
+    """
+    if not file:
+        raise HTTPException(
+            status_code=400, detail="No data provided. Please upload a file."
+        )
+    content = await file.read()
+    data = json.loads(content)
+    # Count listing availability by 'Availability' attr
+    count = {
+        "count": {
+            "available": 0,
+            "not_available": 0,
+        },
+        "count-not-available-in": {
+            "reid_db": 0,
+            "checker_db": 0,
+        },
+    }
+    urls = []
+    for listing in data:
+        if listing["Availability"] == "Available":
+            count["count"]["available"] += 1
+        else:
+            count["count"]["not_available"] += 1
+        urls.append(listing["Property Link"])
+    # Count total listing that not exist in reid_db
+    existing_urls = set(
+        url
+        for (url,) in cloud_db.query(Listing.url).filter(Listing.url.in_(urls)).all()
+    )
+    urls_set = set(urls)
+    missing_urls = urls_set - existing_urls
+    count["count-not-available-in"]["reid_db"] = len(missing_urls)
+    # Count total listing that not exist in checker db
+    existing_urls = set(
+        url for (url,) in checker_db.query(Queue.url).filter(Queue.url.in_(urls)).all()
+    )
+    urls_set = set(urls)
+    missing_urls = urls_set - existing_urls
+    count["count-not-available-in"]["checker_db"] = len(missing_urls)
+    return count
+
+
 @router.post("/before-after")
 async def availability_comparison(
     file: Optional[UploadFile] = File(None),
@@ -593,6 +628,7 @@ async def availability_comparison(
                 )
 
     return {
+        "count": len(before_after),
         "data": before_after,
     }
 
@@ -726,3 +762,224 @@ async def availability_comparison(
                 result.append(new_listing)
 
     return {"results": {"count": len(result), "data": result}}
+
+
+@router.post("/check-sold-date")
+async def check_sold_date(
+    file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Check how many listings are new and have been sold
+    based on data provided
+    """
+    if not file:
+        raise HTTPException(
+            status_code=400, detail="No data provided. Please upload a file."
+        )
+    content = await file.read()
+    data = json.loads(content)
+    data_urls = [item["Property Link"] for item in data]
+
+    # load listings
+    listings = db.query(Listing).filter(Listing.url.in_(data_urls)).all()
+    listings = {l.url: l.to_dict() for l in listings}
+
+    # load new listings
+    new_listings = db.query(Listing).filter(Listing.scraped_at == "2025-03-01").all()
+    new_listings = {l.url: l.to_dict() for l in new_listings}
+
+    # how many new listings?
+    count_new_listings = 0
+    for l in new_listings:
+        if l not in data_urls:
+            count_new_listings += 1
+
+    # define whitelist column
+    columns = [
+        "Source A",
+        "Contract Type",
+        "Property Type",
+        "Years",
+        "Bedrooms",
+        "Bathrooms",
+        "Land Size (SQM)",
+        "Build Size (SQM)",
+        "Price",
+        "Price ($)",
+        "Image",
+        "Title",
+        "Description",
+        "Off plan",
+    ]
+
+    # how many listings updated as not available?
+    count_soldout_listings = 0
+    detail_change = []
+    for item in data:
+        url = item["Property Link"]
+        status = item["Availability"]
+        if url in listings:
+            l = listings[url]
+            listing_status = l["Availability"]
+            is_status_change = status == "Available" and status != listing_status
+            if is_status_change:
+                count_soldout_listings += 1
+            changes = {"url": url}
+            for key in l.keys():
+                if key in columns and item[key] != l[key]:
+                    old_value = item[key]
+                    new_value = l[key]
+                    # skip it , if new value is the build size or land size and end with 2
+                    if key == "Build Size (SQM)" or key == "Land Size (SQM)":
+                        # turn new value into string
+                        new_value_str = str(new_value)
+                        # split the decimal point
+                        new_value_str = new_value_str.split(".")[0]
+                        # check if the last digit is 2
+                        if new_value_str.endswith("2"):
+                            continue
+                    # skip it if new value is empty
+                    if not new_value:
+                        continue
+                    changes.update({key: {"before": old_value, "after": new_value}})
+            # only append changes if it has more than 1 key
+            # it indicates that the listing has been updated
+            # one attribute only means there are only url value inside
+            if len(changes) > 1:
+                detail_change.append(changes)
+
+    # how many listings being updated
+    output = {
+        "report": {
+            "count_new_listings": count_new_listings,
+            "count_soldout_listings": count_soldout_listings,
+            "total_changes": len(detail_change),
+            "changes": detail_change,
+        }
+    }
+
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"result_{now}.json"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w+") as tmp:
+        json.dump(output, tmp, indent=2)
+        tmp_path = tmp.name
+
+    # Return the file and ensure it gets deleted after sending
+    return FileResponse(
+        path=tmp_path,
+        filename=filename,
+        media_type="application/json",
+        background=lambda: os.unlink(
+            tmp_path
+        ),  # Delete the temp file after it's been sent
+    )
+
+
+@router.post("/insert-and-update-json")
+async def insert_and_update_json(
+    file: UploadFile = File(...),
+    local_db: Session = Depends(get_local_db),
+    cloud_db: Session = Depends(get_cloud_db),
+    checker_db: Session = Depends(get_checker_db),
+):
+    """
+    Receive a JSON file for new listtings insertion and
+    update existing listings availability status
+    """
+    if not file:
+        raise HTTPException(
+            status_code=400, detail="No data provided. Please upload a file."
+        )
+    content = await file.read()
+    data = json.loads(content)
+    listings = list(filter(lambda x: x["Availability"] == "Available", data))
+    data_urls = list(set([x["Property Link"] for x in listings if x["Property Link"]]))
+
+    # convert data into listings data
+    listings_data = {l["Property Link"]: l for l in data}
+
+    # load listing from checker db
+    current_month = dt.now().strftime("%Y-%m-01")
+    listings = (
+        checker_db.query(Queue)
+        .filter(
+            Queue.updated_at >= current_month,
+            Queue.status != "Available",
+            Queue.url.in_(data_urls),
+        )
+        .all()
+    )
+    listings = {l.url: l.status for l in listings}
+    print("Total updated listings in checker db:", len(listings))
+
+    count = {
+        "total_sold": 0,
+        "total_delisted": 0,
+        "total_new": 0,
+    }
+
+    ## Update listings availability
+    for url, new_status in listings.items():
+
+        if not url or not url.strip():
+            continue
+
+        if url in listings_data:
+            item = listings_data[url]
+
+            # Use listings to update the item availability
+            sold_date = item.get("Sold Date")
+
+            # update availability
+            if not sold_date:
+                if new_status in ["Sold", "Delisted"]:
+                    now = dt.now()
+                    now = now.replace(month=now.month - 1)
+                    item["Sold Date"] = now.strftime("%b/%y")
+                    item["Availability"] = "Sold"
+                    if new_status == "Delisted":
+                        item["Site Status"] = "Delisted"
+                        count["total_delisted"] += 1
+                    elif new_status == "Sold":
+                        item["Site Status"] = None
+                        count["total_sold"] += 1
+
+    ## Insert new listings
+    ### Query listings from Cloud DB
+    new_listings = []
+    cloud_listings = (
+        cloud_db.query(Listing).filter(Listing.created_at >= current_month).all()
+    )
+    print("Total Cloud Listings:", len(cloud_listings))
+    new_listings.extend(cloud_listings)
+    ### Query listings from Local DB
+    local_listings = (
+        local_db.query(Listing).filter(Listing.created_at >= current_month).all()
+    )
+    print("Total Local Listings:", len(local_listings))
+    new_listings.extend(local_listings)
+    for item in new_listings:
+        if item.url not in listings_data:
+            data.append(item.to_dict())
+            count["total_new"] += 1
+
+    ## Fix listings date attributes
+    for item in data:
+        item = convert_dates_in_item(item)
+
+    ## Output listings as new JSON file
+    default_file_name = file.filename.split(".")[0]
+    filename = f"{default_file_name}_new.json"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w+") as tmp:
+        json.dump(data, tmp, indent=2)
+        tmp_path = tmp.name
+
+    # return count
+    return FileResponse(
+        path=tmp_path,
+        filename=filename,
+        media_type="application/json",
+        background=lambda: os.unlink(tmp_path),
+    )
