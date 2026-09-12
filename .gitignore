@@ -6,9 +6,5 @@ archive/
 alembic*
 
 # files
+.env
 .DS_*
-node_modules
-
-# Local environment files
-.env.*.local
-config.bat
